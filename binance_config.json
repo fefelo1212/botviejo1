@@ -1,0 +1,11 @@
+{
+  "api_key": "ampzPA2IWP1EA5NVJAdruAyPbitxs1kqc6tOkTWf9fu27LOkGVOD2A5PhMF62zX3",
+  "api_secret": "wbazWkMzHznABGONO1dD5i0qFZEUGRO8vhv1xebktqYmaHjkLZvodsRjgZZYDhCi",
+  "base_url": "https://api.binance.com",
+  "testnet_url": "https://testnet.binance.vision",
+  "use_testnet": false,
+  "symbol": "SOLUSDT",
+  "position_size": 0.05,
+  "setup_time": "2025-06-11T07:15:00",
+  "configured": true
+}
