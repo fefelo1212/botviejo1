@@ -35,13 +35,22 @@ class BinanceDataDownloader:
     def get_server_time(self) -> Dict:
         """Obtiene tiempo del servidor Binance"""
         try:
-            response = requests.get(f"{self.base_url}/api/v3/time")
+            response = requests.get(f"{self.base_url}/api/v3/time", timeout=10)
+            response.raise_for_status()
             data = response.json()
+            
+            if 'serverTime' not in data:
+                print(f"Respuesta inesperada del servidor: {data}")
+                return None
+                
             server_time = datetime.fromtimestamp(data['serverTime'] / 1000)
             print(f"Tiempo servidor Binance: {server_time}")
             return {"serverTime": data['serverTime'], "formatted": server_time}
+        except requests.exceptions.RequestException as e:
+            print(f"Error de conexión con Binance: {e}")
+            return None
         except Exception as e:
-            print(f"Error obteniendo tiempo servidor: {e}")
+            print(f"Error procesando respuesta: {e}")
             return None
     
     def get_exchange_info(self) -> Dict:

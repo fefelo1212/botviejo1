@@ -1,0 +1,79 @@
+Documentación del Proyecto: Bot de Trading con Aprendizaje Automático
+
+1. Propósito General del Proyecto:
+Desarrollo de un bot de trading automatizado con capacidades de aprendizaje automático (Machine Learning) para operar en mercados de criptomonedas. El objetivo principal es operar en modo "paper trading" (simulación) para entrenamiento sin riesgo, antes de una posible implementación con fondos reales.
+
+2. Arquitectura del Bot:
+El bot está diseñado con una arquitectura modular, que incluye:
+
+    config.json y config.env: Para gestionar la configuración del bot y las credenciales de API de forma segura.
+    [Exchange]WebSocketClient: Módulo encargado de la comunicación en tiempo real con el exchange (anteriormente OKX, futuro Binance) a través de WebSockets (canales públicos y privados).
+    HistoricalDataSaver: Módulo para la gestión y almacenamiento de datos históricos de mercado en una base de datos local (SQLite).
+    LearningTradingBot: La lógica central del bot, que integra los datos de mercado, la estrategia de trading y el componente de aprendizaje automático.
+    Sistema de Logging: Implementación robusta de logging para depuración y monitoreo detallado.
+
+Estado Pasado y Errores Resueltos (Conexión OKX)
+
+En las fases iniciales del proyecto, se enfrentaron desafíos significativos con la conexión y el manejo de WebSockets específicos de OKX:
+
+    websockets.exceptions.ConcurrencyError: cannot call recv while another coroutine is already running recv or recv_streaming:
+        Causa: Conflicto al intentar que múltiples "corutinas" (partes del código asíncrono) llamaran simultáneamente a recv() en la misma conexión WebSocket. Específicamente, la función de autenticación y el consumidor de mensajes privados competían por recibir datos.
+        Solución Implementada: Se refactorizó el código para que solo el consumidor de mensajes privados (_private_message_consumer) tuviera el rol exclusivo de llamar a recv(). Al recibir una respuesta de autenticación, este consumidor ahora la deposita en una cola asyncio.Queue (self.auth_response_queue), desde donde la función authenticate() puede recuperarla de forma segura. Esta modificación eliminó exitosamente el ConcurrencyError.
+
+    AttributeError: 'NoneType' object has no attribute 'close':
+        Causa: Este error ocurría cuando se intentaba cerrar una conexión WebSocket privada (self.private_ws) que ya se había establecido a None (generalmente tras un cierre previo o un fallo de conexión), resultando en un intento de llamar a .close() en un objeto nulo.
+        Solución Implementada: Se añadió una verificación if self.private_ws and self.private_ws.state == State.OPEN: antes de cualquier intento de cerrar la conexión. Esto asegura que close() solo se llame si la conexión existe y está en un estado abierto.
+
+    Problemas de Conexión Pública y Suscripción (OKX):
+        Existieron dudas iniciales sobre si la conexión pública a OKX y la suscripción a canales de mercado (como tickers) estaban funcionando correctamente.
+        Estado Actual: Este aspecto está completamente resuelto y funcionando. Los logs actuales confirman que el bot se conecta exitosamente al WebSocket público de OKX y que la suscripción al canal tickers para el par SOL-USDT se envía y es confirmada por el servidor. El consumidor público opera sin problemas y procesa los mensajes de mercado.
+
+Estado Actual del Error (Autenticación Privada OKX)
+
+El único problema persistente y que actualmente bloquea el progreso del bot con OKX es el fallo de autenticación de la conexión WebSocket privada:
+
+    Error Manifestado en los Logs (Ejemplo):
+        2025-06-11 03:42:52,400 - INFO - Solicitud de autenticación enviada.
+        2025-06-11 03:42:52,789 - INFO - DEBUG: Consumidor privado terminado. self.private_ws establecido a None.
+        2025-06-11 03:43:07,406 - ERROR - Tiempo de espera agotado para la autenticación. No se recibió respuesta de login en el tiempo esperado.
+        2025-06-11 03:43:07,408 - ERROR - Fallo la autenticación privada. Desconectando WebSocket privado.
+
+    Diagnóstico: El bot envía la solicitud de autenticación (op: login) correctamente. Sin embargo, el servidor de OKX Testnet cierra la conexión WebSocket privada de forma inmediata (a los pocos milisegundos) después de recibir esta solicitud. En este escenario, OKX no devuelve un mensaje explícito de "Login failed" (como un código de error 4001) por el WebSocket antes de cerrarlo; simplemente termina la conexión. El cierre abrupto de la conexión por parte del servidor es la señal inequívoca de que la autenticación ha sido rechazada. Dado que la conexión se cierra, la función authenticate() nunca recibe una respuesta en la cola auth_response_queue, lo que resulta en un agotamiento del tiempo de espera.
+
+    Causa Raíz Determinada: Este comportamiento es un indicador muy fuerte de que las credenciales de API de Testnet (OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE) o los permisos asociados a esa API Key en la cuenta de OKX Testnet son incorrectos o insuficientes. Esto incluye errores de tipeo, espacios extra, problemas de mayúsculas/minúsculas en la passphrase, o que la clave no tiene los permisos necesarios para las operaciones WebSocket privadas (ej., "Trade" o una opción específica de "Acceso a Datos").
+
+    Estado Actual de las Credenciales: Se ha confirmado repetidamente que la información en config.env es correcta. A pesar de esto, la persistencia del error sugiere que la validación debe enfocarse de manera extremadamente minuciosa en el lado de la configuración de la API Key directamente en el panel de control de OKX Testnet, incluyendo la posibilidad de generar una nueva clave API si las verificaciones exhaustivas de la existente no dan resultado. El problema no es el código del bot; es la aceptación de las credenciales por parte del servidor de OKX.
+
+Estado Futuro del Proyecto: Transición a Binance y Enfoque en SOL-USDT
+
+Dada la persistencia del bloqueo de autenticación con OKX (considerado un problema de configuración externa al código del bot), y la disponibilidad de credenciales para Binance, el proyecto pivotará estratégicamente hacia Binance. El par de trading principal será SOL-USDT.
+
+Próximos Pasos Detallados:
+
+    Configuración de Credenciales para Binance y SOL-USDT:
+        config.env: Actualizar con BINANCE_API_KEY, BINANCE_SECRET_KEY, y asegurar que USE_DEMO_MODE=True si se usará el Testnet de Binance.
+        config.json: Confirmar que "trading_pairs": ["SOL-USDT"] esté configurado correctamente.
+
+    Desarrollo del Cliente WebSocket de Binance (binance_websocket_client.py):
+        Creación del Módulo: Se desarrollará un nuevo módulo api_client/binance_websocket_client.py.
+        Conexiones WebSocket: Implementará la lógica para establecer y mantener conexiones WebSocket con los endpoints públicos y privados de Binance.
+        Autenticación Binance: Desarrollará la lógica de autenticación específica de Binance para canales privados. Esto típicamente implica una llamada REST API inicial para obtener un listenKey, que luego se usa en el WebSocket privado.
+        Manejo de Datos: Los consumidores de mensajes (público y privado) deberán procesar los datos de Binance y colocarlos en la data_from_exchange_queue de manera uniforme, compatible con el resto del bot.
+        Suscripciones: Implementará métodos para suscribirse a los canales relevantes de Binance para SOL-USDT (ej., solusdt@ticker, solusdt@kline_1m).
+
+    Módulo de Descarga de Datos Históricos de Binance (para SOL-USDT):
+        Implementación: Se desarrollará un componente para descargar datos históricos de velas (candlesticks) para SOL-USDT directamente desde la API REST de Binance.
+        Almacenamiento: Estos datos se almacenarán en la base de datos local (market_data.db) utilizando el módulo HistoricalDataSaver.
+        Importancia: Este paso es fundamental y prioritario, ya que la disponibilidad de datos históricos fiables de SOL-USDT es la base para el entrenamiento y la validación de cualquier estrategia de aprendizaje automático.
+
+    Adaptación del Bot Principal y Estrategia (para SOL-USDT y Binance):
+        trading_bot.py: Se modificará el archivo principal para importar e instanciar BinanceWebSocketClient en lugar de OKXWebSocketClient.
+        LearningTradingBot: La lógica interna del LearningTradingBot se adaptará para operar con los datos y la estructura de mensajes específicos de Binance y el par SOL-USDT.
+        Estrategias ML: Las estrategias de aprendizaje automático se desarrollarán y probarán específicamente con datos de SOL-USDT de Binance.
+
+Impacto del Cambio a Binance:
+
+    Ventajas: Potencialmente resolverá el bloqueo actual de autenticación que se experimenta con OKX. Binance es un exchange líder con una API robusta y una gran comunidad de desarrolladores.
+    Desafíos: Requiere un esfuerzo significativo de reescritura para adaptar el cliente WebSocket y la lógica de autenticación a la API de Binance, lo cual representa una nueva fase de desarrollo.
+
+Este plan proporciona una hoja de ruta clara para la transición y el desarrollo futuro del bot, centrado en el par SOL-USDT y la infraestructura de Binance.
