@@ -1,0 +1,21 @@
+# Ignorar archivos de datos grandes
+*.csv
+*.zip
+*.gz
+
+# Ignorar modelos entrenados
+*.joblib
+*.pkl
+*.pickle
+
+# Ignorar temporales de Python
+__pycache__/
+*.pyc
+*.log
+
+# Ignorar entornos virtuales
+venv/
+env/
+
+# Ignorar configuraciones sensibles
+.env

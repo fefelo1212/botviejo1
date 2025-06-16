@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import os
+from features.advanced_feature_engineer import AdvancedFeatureEngineer
 
 class LocalBinanceTrader:
     def __init__(self):
@@ -54,12 +55,12 @@ class LocalBinanceTrader:
             
             ticker_data = response.json()
             
-            # 3. Datos históricos (200 velas de 1 minuto)
+            # 3. Datos históricos (1000 velas de 1 minuto)
             response = requests.get(f"{self.base_url}/api/v3/klines",
                                   params={
                                       'symbol': self.symbol,
                                       'interval': '1m',
-                                      'limit': 200
+                                      'limit': 1000  # Cambiado de 200 a 1000
                                   }, timeout=15)
             if response.status_code != 200:
                 print(f"Error klines: {response.status_code}")
@@ -72,15 +73,49 @@ class LocalBinanceTrader:
                 'open_time', 'open', 'high', 'low', 'close', 'volume',
                 'close_time', 'quote_volume', 'trades', 'buy_volume', 'buy_quote_volume', 'ignore'
             ])
-            
             df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
             df['close_time'] = pd.to_datetime(df['close_time'], unit='ms')
-            
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                df[col] = pd.to_numeric(df[col])
-            
-            # Guardar datos localmente
-            df.to_csv(f'{self.symbol}_live_data.csv', index=False)
+            numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'quote_volume', 'trades', 'buy_volume', 'buy_quote_volume']
+            for col in numeric_cols:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            # --- NUEVO: Usar AdvancedFeatureEngineer para features avanzados ---
+            feature_engineer = AdvancedFeatureEngineer()
+            processed_df = feature_engineer.add_all_features(df.copy())
+            # --- NUEVO: Lógica de target basada en simulación de TP/SL ---
+            TP_ratio = 0.002  # 0.2% take profit
+            SL_ratio = 0.001  # 0.1% stop loss
+            window = 5        # Número de velas hacia adelante
+
+            closes = processed_df['close'].values
+            highs = processed_df['high'].values
+            lows = processed_df['low'].values
+            n = len(processed_df)
+            target = np.zeros(n)
+
+            for i in range(n - window):
+                entry = closes[i]
+                tp = entry * (1 + TP_ratio)
+                sl = entry * (1 - SL_ratio)
+                future_highs = highs[i+1:i+1+window]
+                future_lows = lows[i+1:i+1+window]
+                hit_tp = np.where(future_highs >= tp)[0]
+                hit_sl = np.where(future_lows <= sl)[0]
+                if hit_tp.size > 0 and (hit_sl.size == 0 or hit_tp[0] < hit_sl[0]):
+                    target[i] = 1
+                elif hit_sl.size > 0 and (hit_tp.size == 0 or hit_sl[0] < hit_tp[0]):
+                    target[i] = -1
+                else:
+                    target[i] = 0
+            processed_df['target'] = target
+            processed_df = processed_df.iloc[:-window]  # Elimina filas finales sin ventana suficiente
+            processed_df.dropna(inplace=True)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Dataset final con features y target TP/SL generado. Filas restantes: {len(processed_df)}")
+            if not processed_df.empty:
+                logger.info("Conteo de la columna 'target' final:")
+                logger.info(processed_df['target'].value_counts())
+            processed_df.to_csv(f'{self.symbol}_live_data.csv', index=False)
             
             market_data = {
                 'price': current_price,
@@ -471,6 +506,9 @@ class LocalBinanceTrader:
             
         except Exception as e:
             print(f"Error guardando datos: {e}")
+
+# --- Función para añadir características y la columna target ---
+# (Eliminada: generate_features_and_target)
 
 def main():
     """Función principal"""

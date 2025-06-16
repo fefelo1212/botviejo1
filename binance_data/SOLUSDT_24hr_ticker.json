@@ -1,0 +1,19 @@
+{
+  "symbol": "SOLUSDT",
+  "priceChange": -7.23,
+  "priceChangePercent": -4.341,
+  "weightedAvgPrice": 163.40550268,
+  "prevClosePrice": 166.55,
+  "lastPrice": 159.32,
+  "bidPrice": 159.32,
+  "askPrice": 159.33,
+  "openPrice": 166.55,
+  "highPrice": 168.36,
+  "lowPrice": 157.98,
+  "volume": 3665525.531,
+  "quoteVolume": 598967041.97175,
+  "openTime": 1749633332792,
+  "closeTime": 1749719732792,
+  "count": 2434348,
+  "timestamp": "2025-06-12T06:15:33.094643"
+}

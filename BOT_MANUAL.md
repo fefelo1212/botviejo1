@@ -1,55 +1,116 @@
 
-# MANUAL DEL BOT DE TRADING SOLANA
+# MANUAL DEL BOT DE TRADING SOLANA (BINANCE)
 
-## 1. MODOS DE OPERACIÓN
-- **Paper Trading [1]**: Modo simulación (sin riesgo real)
-- **Live Trading [2]**: Modo real (requiere validaciones)
+## 1. VISIÓN GENERAL
+El bot opera en el par SOLUSDT en Binance, utilizando datos en tiempo real y un sistema de aprendizaje adaptativo. El sistema está diseñado para evolucionar y mejorar sus estrategias basándose en los resultados históricos.
 
-## 2. MENÚ PRINCIPAL Y OPERACIONES
-1. **Scalping en Tiempo Real [1]**
-   - Configurar par (SOL-USDT default)
-   - Seleccionar timeframe (1m, 3m, 5m, 15m)
-   - Estrategias disponibles:
-     - RSI adaptativo
-     - Momentum con reversión
-     - Patrones de velas
-     - Estrategia adaptativa (ML)
+## 2. MODOS DE OPERACIÓN
 
-2. **Backtesting [2]**
-   - Test rápido
-   - Optimización de parámetros
-   - Comparar estrategias
-   - Análisis adaptativo
+### Paper Trading (Actual)
+- Sin riesgo real
+- Conexión directa a Binance (sin API key)
+- Datos en tiempo real
+- Aprendizaje activo
+- Balance virtual: $10,000 USDT
 
-3. **Configuración [3]**
-   - Modo trading
-   - API exchange
-   - Gestión de riesgo
-   - Notificaciones
-   - Opciones avanzadas
+### Live Trading (Futuro)
+- Requiere validación de performance
+- Necesita API keys de Binance
+- Sistema completo de gestión de riesgos
+- Monitoreo 24/7
 
-4. **Monitor [4]**
-   - Estado del sistema
-   - Log de operaciones
-   - Gráficos de rendimiento
-   - Log de errores
+## 3. OPERACIÓN DEL BOT
 
-## 3. SEGURIDAD Y VALIDACIONES
-- Circuit breakers automáticos
-- Límites de pérdida diaria
-- Requisitos para modo real:
-  - Min. 100 operaciones en paper
-  - Win rate > 55% últimas 50 ops
-  - Drawdown máx < 15%
+### Inicio del Bot
+```powershell
+python trading_bot.py
+```
 
-## 4. SISTEMA ADAPTATIVO
-- Ponderación dinámica
-- Ajuste según mercado
-- Aprendizaje de patrones
-- Export/Import de "cerebro"
+### Monitoreo en Tiempo Real
+- Ver `trading_bot.log` para actividad
+- Revisar `SOLUSDT_trading_log.json` para operaciones
+- Consultar `learning_data.json` para datos de aprendizaje
 
-## 5. GESTIÓN DE RIESGOS
-- Tamaño posición: 1-3%
+## 4. ESTRATEGIA ACTUAL
+
+### Indicadores Técnicos
+- RSI (Periodo 14)
+  * Sobrecompra: 70
+  * Sobreventa: 30
+  * Peso: 30%
+
+- MACD
+  * Línea rápida: 12
+  * Línea lenta: 26
+  * Señal: 9
+  * Peso: 30%
+
+- Medias Móviles
+  * Rápida: 5 períodos
+  * Lenta: 20 períodos
+  * Peso: 40%
+
+### Gestión de Riesgo
+- Tamaño posición: 1% del balance
+- Take Profit: 1.5%
+- Stop Loss: 1%
+
+## 5. SISTEMA DE APRENDIZAJE
+
+### Datos Recolectados
+- Precio y volumen
+- Profundidad de mercado
+- Trades en tiempo real
+- Rendimiento de operaciones
+
+### Optimización
+- Pesos de indicadores
+- Parámetros de entrada/salida
+- Detección de condiciones de mercado
+
+## 6. REQUISITOS PARA TRADING REAL
+
+### Performance Mínima
+- 100+ operaciones simuladas
+- Win rate > 55%
+- Drawdown máximo < 15%
+- Un mes de operación estable
+
+### Configuración Necesaria
+- API Keys de Binance
+- Configuración de webhooks
+- Sistema de notificaciones
+- Monitoreo 24/7
+
+## 7. ARCHIVOS IMPORTANTES
+
+### Configuración
+- `config.env`: Configuración principal
+- `learning_data.json`: Datos de aprendizaje
+- `binance_config.json`: Configuración de Binance
+
+### Logs y Datos
+- `trading_bot.log`: Log principal
+- `SOLUSDT_trading_log.json`: Historial de trades
+- `SOLUSDT_live_data.csv`: Datos en tiempo real
+- `SOLUSDT_technical_analysis.csv`: Análisis técnico
+
+## 8. PLAN DE IMPLEMENTACIÓN
+
+### Fase 1: Simulación (Actual)
+- Operación 24/7 en paper trading
+- Recolección de datos
+- Optimización de estrategias
+
+### Fase 2: Aprendizaje
+- Entrenamiento del sistema
+- Ajuste de parámetros
+- Validación de resultados
+
+### Fase 3: Trading Real
+- Implementación gradual
+- Monitoreo constante
+- Gestión de riesgos activa
 - Stop loss dinámico
 - Take profit escalonado
 - Control drawdown

@@ -627,71 +627,30 @@ class MLStrategy:
         logger.info(f"Modelo entrenado. Rendimiento: {performance}")
         return performance
     
-    def _prepare_lstm_data(self, features: pd.DataFrame, sequence_length: int = 10) -> np.ndarray:
+    def train(self, X, y):
         """
-        Prepara datos para LSTM
-        
+        Entrena el modelo con los features y el target ya preparados
         Args:
-            features: DataFrame con características
-            sequence_length: Longitud de las secuencias
-            
-        Returns:
-            np.ndarray: Datos formateados para LSTM [samples, time_steps, features]
+            X: DataFrame de features
+            y: Serie o array de etiquetas (target)
         """
-        data = features.values
-        X = []
-        
-        for i in range(len(data) - sequence_length):
-            X.append(data[i:(i + sequence_length)])
-        
-        return np.array(X)
-    
-    def _build_lstm_model(self, input_shape: Tuple):
-        """
-        Construye el modelo LSTM
-        
-        Args:
-            input_shape: Forma de los datos de entrada (time_steps, features)
-        """
-        if not KERAS_AVAILABLE:
-            logger.error("TensorFlow/Keras no está disponible. No se puede construir LSTM.")
-            return
-        
-        units = self.model_params.get("units", 50)
-        dropout = self.model_params.get("dropout", 0.2)
-        recurrent_dropout = self.model_params.get("recurrent_dropout", 0.2)
-        
-        model = Sequential()
-        
-        # Capa LSTM
-        model.add(LSTM(
-            units=units,
-            dropout=dropout,
-            recurrent_dropout=recurrent_dropout,
-            input_shape=input_shape,
-            return_sequences=False
-        ))
-        
-        # Capa oculta
-        model.add(Dense(units=20, activation='relu'))
-        
-        # Capa de salida
-        if self.target_type == "classification":
-            model.add(Dense(units=1, activation='sigmoid'))
-            model.compile(
-                optimizer='adam',
-                loss='binary_crossentropy',
-                metrics=['accuracy']
-            )
-        else:
-            model.add(Dense(units=1, activation='linear'))
-            model.compile(
-                optimizer='adam',
-                loss='mse',
-                metrics=['mae']
-            )
-        
-        self.model = model
+        logger.info(f"Entrenando modelo {self.model_type} para estrategia ML (target externo)")
+        # Elimina filas con NaN
+        valid_indices = ~(X.isna().any(axis=1) | pd.isna(y))
+        X = X[valid_indices]
+        y = y[valid_indices]
+        if len(X) < 100:
+            logger.warning("Insuficientes datos para entrenar modelo")
+            return {"error": "Insuficientes datos para entrenar modelo"}
+        # Escalar características
+        scaled_features = self.feature_engineering.scale_features(X, fit=True)
+        self.model.fit(scaled_features, y)
+        self.model_trained = True
+        self.last_training_date = datetime.now()
+        logger.info("Modelo entrenado correctamente con target externo")
+        return {"status": "ok", "n_samples": len(X)}
+
+    # ...existing code...
     
     def predict(self, df: pd.DataFrame) -> Dict[str, Any]:
         """

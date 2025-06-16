@@ -1,0 +1,27 @@
+{
+  "symbol": "SOLUSDT",
+  "timestamp": "2025-06-14T14:27:27.023057",
+  "balance": 1000.0,
+  "current_position": null,
+  "total_trades": 0,
+  "trades": [],
+  "current_market": {
+    "price": 144.5,
+    "change_24h": -1.129,
+    "volume_24h": 1938402.907
+  },
+  "current_signals": {
+    "action": "HOLD",
+    "confidence": 0,
+    "signal_strength": 0,
+    "buy_signals": [],
+    "sell_signals": [],
+    "active_signals": [],
+    "price": 144.49,
+    "rsi": 67.94871794871864,
+    "macd": 0.2237442527510609,
+    "volume_ratio": 0.47059475958408714,
+    "momentum": 0.09005264616237518,
+    "timestamp": "2025-06-14T14:27:27.015059"
+  }
+}

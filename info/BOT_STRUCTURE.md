@@ -2,7 +2,31 @@
 
 ## Información General
 
-Este bot de trading algorítmico está especializado en operaciones con Solana (SOL/USDT) para scalping y day trading, utilizando aprendizaje automático adaptativo y múltiples estrategias que se optimizan constantemente en función de los resultados históricos.
+Este bot de trading algorítmico está especializado en operaciones con Solana (SOL/USDT) para scalping y day trading, utilizando aprendizaje automático adaptativo y múltiples estrategias que se optimizan constantemente en función de los resultados históricos. Originalmente desarrollado para OKX, ahora ha sido migrado a Binance debido a su mayor estabilidad y mejor calidad de datos.
+
+## Estado Actual del Proyecto
+
+### Fase Actual: Integración con Binance
+- Conexión WebSocket estable implementada
+- Recepción de datos en tiempo real (velas, trades, profundidad)
+- Sistema de paper trading funcional
+- Aprendizaje adaptativo en desarrollo
+
+### Próximas Fases
+1. **Fase de Simulación** (1-2 meses)
+   - Operaciones simuladas 24/7
+   - Refinamiento de estrategias
+   - Optimización de parámetros
+
+2. **Fase de Aprendizaje** (1 mes)
+   - Recolección de datos de mercado
+   - Entrenamiento del sistema adaptativo
+   - Ajuste de pesos de indicadores
+
+3. **Fase de Trading Real** (después de validación)
+   - Requisitos mínimos de performance
+   - Integración con gestión de riesgos
+   - Monitoreo constante
 
 ## Arquitectura del Sistema
 
@@ -32,8 +56,9 @@ Este bot de trading algorítmico está especializado en operaciones con Solana (
 - **Fee Calculator**: Cálculo detallado de comisiones e impacto
 
 ### 6. Cliente API (`api_client/`)
-- **Exchange Client**: Conexiones a los exchanges (OKX, Binance)
+- **Binance Client**: Cliente optimizado para Binance
 - **WebSocket Client**: Conexiones en tiempo real para datos y órdenes
+- **Data Streams**: Gestión de múltiples streams de datos
 
 ### 7. Interfaz de Usuario (`interface/`)
 - **CLI Menu**: Menú interactivo de línea de comandos

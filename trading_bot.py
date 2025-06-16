@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Bot de Trading con Aprendizaje Automático
 Modo paper trading para entrenamiento sin riesgo
@@ -14,13 +15,18 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 from typing import Dict, List, Optional
+from websockets import connect
+
+# Configurar encoding para Windows
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('trading_bot.log'),
+        logging.FileHandler('trading_bot.log', encoding='utf-8'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -30,14 +36,90 @@ logger = logging.getLogger("LearningBot")
 config_path = Path("config.env")
 load_dotenv(dotenv_path=config_path)
 
-# Importar módulos del bot
-from api_client.modulocola import data_queue
-from api_client.modulo2 import OKXWebSocketClient
+class BinanceWebSocketClient:
+    """Cliente WebSocket para Binance"""
+    def __init__(self, data_queue):
+        self.data_queue = data_queue
+        self.ws = None
+        self.is_connected = False
+        self.symbol = os.getenv("DEFAULT_SYMBOL", "SOLUSDT").lower()
+        # Construir URL con streams directamente
+        streams = [
+            f"{self.symbol}@kline_1m",  # Velas de 1 minuto
+            f"{self.symbol}@trade",     # Trades en tiempo real
+            f"{self.symbol}@depth20"    # Profundidad del mercado
+        ]
+        self.base_url = f"wss://stream.binance.com:9443/stream?streams={'/'.join(streams)}"
+
+    async def connect(self):
+        """Establece la conexión WebSocket con Binance."""
+        try:
+            self.ws = await connect(self.base_url)
+            self.is_connected = True
+            logger.info("Conexión establecida con Binance WebSocket")
+            return True
+        except Exception as e:
+            logger.error(f"Error al conectar con Binance WebSocket: {e}")
+            self.is_connected = False
+            return False
+
+    async def subscribe(self, channels: List[str]):
+        """Ya no necesita suscribirse porque los streams están en la URL"""
+        return True
+
+    async def _process_message(self, message):
+        """Procesa un mensaje recibido del WebSocket."""
+        try:
+            data = json.loads(message)
+            
+            # El formato de los streams combinados incluye un campo 'data'
+            if 'data' in data:
+                data = data['data']
+
+            # Procesar según el tipo de datos
+            if "k" in data:  # Datos de vela
+                candle = data['k']
+                processed_data = {
+                    "type": "kline",
+                    "data": [{
+                        "timestamp": candle['t'],
+                        "open": float(candle['o']),
+                        "high": float(candle['h']),
+                        "low": float(candle['l']),
+                        "close": float(candle['c']),
+                        "volume": float(candle['v'])
+                    }]
+                }
+                await self.data_queue.put(processed_data)
+
+        except Exception as e:
+            logger.error(f"Error procesando mensaje: {e}")
+
+    async def receive_messages(self):
+        """Recibe mensajes del WebSocket."""
+        while True:
+            try:
+                if not self.ws:
+                    await asyncio.sleep(1)
+                    continue
+
+                async for message in self.ws:
+                    await self._process_message(message)
+
+            except Exception as e:
+                logger.error(f"Error recibiendo mensajes: {e}")
+                if not self.is_connected:
+                    await asyncio.sleep(5)
+                    try:
+                        await self.connect()
+                    except:
+                        continue
 
 class PaperTradingEngine:
     """Motor de paper trading con aprendizaje"""
     
-    def __init__(self, initial_balance=10000):
+    def __init__(self, symbol="SOLUSDT", initial_balance=10000):
+        self.symbol = symbol
         self.balance = initial_balance
         self.initial_balance = initial_balance
         self.position = None
@@ -45,176 +127,200 @@ class PaperTradingEngine:
         self.market_data = []
         self.learning_data = []
         
+        # Configuración de riesgo
+        self.max_position_size = 0.01  # 1% del balance
+        self.take_profit_pct = 0.015   # 1.5% de ganancia objetivo
+        self.stop_loss_pct = 0.01      # 1% de pérdida máxima
+        
+        # Configuración de indicadores
+        self.indicator_weights = {
+            'rsi': 0.3,
+            'macd': 0.3,
+            'sma_cross': 0.4
+        }
+        
+        # Parámetros de indicadores
+        self.indicator_config = {
+            'rsi': {
+                'period': 14,
+                'overbought': 70,
+                'oversold': 30
+            },
+            'macd': {
+                'fast': 12,
+                'slow': 26,
+                'signal': 9
+            },
+            'sma': {
+                'fast': 5,
+                'slow': 20
+            }
+        }
+        
+        logger.info(f"Bot inicializado - Symbol: {self.symbol} - Balance inicial: ${self.initial_balance:.2f}")
+
     def analyze_market(self, candle_data):
-        """Analiza datos de mercado y toma decisiones"""
-        if len(self.market_data) < 20:  # Necesitamos al menos 20 velas
+        """Analiza datos de mercado y toma decisiones usando pesos dinámicos"""
+        if len(self.market_data) < 26:  # Necesitamos al menos 26 velas para MACD
             return None
             
         df = pd.DataFrame(self.market_data)
-        
-        # Calcular indicadores técnicos
-        df['sma_5'] = df['close'].rolling(5).mean()
-        df['sma_20'] = df['close'].rolling(20).mean()
-        df['rsi'] = self.calculate_rsi(df['close'])
+        df = self.calculate_technical_indicators(df)
         
         current_price = float(candle_data['close'])
-        sma_5 = df['sma_5'].iloc[-1]
-        sma_20 = df['sma_20'].iloc[-1]
-        rsi = df['rsi'].iloc[-1]
+        current_data = df.iloc[-1]
         
-        # Lógica de trading simple para empezar
-        signal = None
+        # Señales técnicas usando la configuración actual
+        signals = {
+            'rsi': {
+                'value': current_data['rsi'],
+                'signal': 1 if current_data['rsi'] < self.indicator_config['rsi']['oversold'] else 
+                         -1 if current_data['rsi'] > self.indicator_config['rsi']['overbought'] else 0,
+                'weight': self.indicator_weights['rsi']
+            },
+            'macd': {
+                'value': current_data['macd'],
+                'signal': 1 if current_data['macd'] > current_data['macd_signal'] else 
+                         -1 if current_data['macd'] < current_data['macd_signal'] else 0,
+                'weight': self.indicator_weights['macd']
+            },
+            'sma_cross': {
+                'value': current_data['sma_fast'] - current_data['sma_slow'],
+                'signal': 1 if current_data['sma_fast'] > current_data['sma_slow'] else 
+                         -1 if current_data['sma_fast'] < current_data['sma_slow'] else 0,
+                'weight': self.indicator_weights['sma_cross']
+            }
+        }
         
-        if self.position is None:  # No tenemos posición
-            if sma_5 > sma_20 and rsi < 70:  # Señal de compra
-                signal = "BUY"
-            elif sma_5 < sma_20 and rsi > 30:  # Señal de venta
-                signal = "SELL"
-        else:  # Tenemos posición abierta
-            if self.position['type'] == 'LONG':
-                if current_price >= self.position['entry_price'] * 1.01:  # 1% ganancia
-                    signal = "CLOSE_LONG_PROFIT"
-                elif current_price <= self.position['entry_price'] * 0.99:  # 1% pérdida
-                    signal = "CLOSE_LONG_LOSS"
-            elif self.position['type'] == 'SHORT':
-                if current_price <= self.position['entry_price'] * 0.99:  # 1% ganancia
-                    signal = "CLOSE_SHORT_PROFIT"
-                elif current_price >= self.position['entry_price'] * 1.01:  # 1% pérdida
-                    signal = "CLOSE_SHORT_LOSS"
+        # Calcular señal combinada
+        weighted_signal = sum(s['signal'] * s['weight'] for s in signals.values())
         
         return {
-            'signal': signal,
             'price': current_price,
-            'sma_5': sma_5,
-            'sma_20': sma_20,
-            'rsi': rsi
+            'signals': signals,
+            'weighted_signal': weighted_signal,
+            'signal': 1 if weighted_signal > 0.5 else -1 if weighted_signal < -0.5 else 0
         }
-    
-    def calculate_rsi(self, prices, period=14):
-        """Calcula RSI"""
-        delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+
+    def calculate_technical_indicators(self, df):
+        """Calcula indicadores técnicos en el DataFrame"""
+        # RSI
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=self.indicator_config['rsi']['period']).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=self.indicator_config['rsi']['period']).mean()
         rs = gain / loss
-        return 100 - (100 / (1 + rs))
-    
+        df['rsi'] = 100 - (100 / (1 + rs))
+        
+        # MACD
+        exp1 = df['close'].ewm(span=self.indicator_config['macd']['fast']).mean()
+        exp2 = df['close'].ewm(span=self.indicator_config['macd']['slow']).mean()
+        df['macd'] = exp1 - exp2
+        df['macd_signal'] = df['macd'].ewm(span=self.indicator_config['macd']['signal']).mean()
+        
+        # SMAs
+        df['sma_fast'] = df['close'].rolling(window=self.indicator_config['sma']['fast']).mean()
+        df['sma_slow'] = df['close'].rolling(window=self.indicator_config['sma']['slow']).mean()
+        
+        return df
+
     def execute_trade(self, analysis):
-        """Ejecuta operación en papel"""
-        signal = analysis['signal']
-        price = analysis['price']
-        
-        if signal == "BUY" and self.position is None:
-            self.position = {
-                'type': 'LONG',
-                'entry_price': price,
-                'entry_time': datetime.now(),
-                'size': self.balance * 0.1  # 10% del balance
-            }
-            logger.info(f"📈 COMPRA ejecutada a ${price:.4f}")
-            
-        elif signal == "SELL" and self.position is None:
-            self.position = {
-                'type': 'SHORT',
-                'entry_price': price,
-                'entry_time': datetime.now(),
-                'size': self.balance * 0.1
-            }
-            logger.info(f"📉 VENTA ejecutada a ${price:.4f}")
-            
-        elif signal and "CLOSE" in signal:
-            if self.position:
-                profit = self.calculate_profit(price)
-                self.balance += profit
-                
-                trade_result = {
-                    'entry_price': self.position['entry_price'],
-                    'exit_price': price,
-                    'profit': profit,
-                    'type': self.position['type'],
-                    'signal': signal,
-                    'duration': (datetime.now() - self.position['entry_time']).seconds,
-                    'analysis_data': analysis
-                }
-                
-                self.trades.append(trade_result)
-                self.learn_from_trade(trade_result)
-                
-                logger.info(f"🔄 Posición cerrada: {profit:+.2f} USDT (Balance: {self.balance:.2f})")
-                self.position = None
-    
-    def calculate_profit(self, exit_price):
-        """Calcula ganancia/pérdida"""
-        if not self.position:
-            return 0
-            
-        size = self.position['size']
-        entry_price = self.position['entry_price']
-        
-        if self.position['type'] == 'LONG':
-            return size * (exit_price - entry_price) / entry_price
-        else:  # SHORT
-            return size * (entry_price - exit_price) / entry_price
-    
-    def learn_from_trade(self, trade_result):
-        """Aprende de los resultados de trading"""
-        success = trade_result['profit'] > 0
-        
-        learning_record = {
-            'timestamp': datetime.now().isoformat(),
-            'success': success,
-            'profit': trade_result['profit'],
-            'indicators': {
-                'sma_5': trade_result['analysis_data']['sma_5'],
-                'sma_20': trade_result['analysis_data']['sma_20'],
-                'rsi': trade_result['analysis_data']['rsi']
-            },
-            'market_conditions': self.get_market_conditions()
-        }
-        
-        self.learning_data.append(learning_record)
-        self.save_learning_data()
-        
-        # Análisis de rendimiento
-        if len(self.trades) % 10 == 0:  # Cada 10 operaciones
-            self.analyze_performance()
-    
-    def get_market_conditions(self):
-        """Identifica condiciones actuales del mercado"""
-        if len(self.market_data) < 10:
-            return "insufficient_data"
-            
-        recent_prices = [float(d['close']) for d in self.market_data[-10:]]
-        volatility = np.std(recent_prices) / np.mean(recent_prices)
-        
-        if volatility > 0.02:
-            return "high_volatility"
-        elif volatility < 0.005:
-            return "low_volatility"
-        else:
-            return "normal_volatility"
-    
-    def save_learning_data(self):
-        """Guarda datos de aprendizaje"""
-        try:
-            with open('learning_data.json', 'w') as f:
-                json.dump(self.learning_data, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error guardando datos de aprendizaje: {e}")
-    
-    def analyze_performance(self):
-        """Analiza rendimiento y muestra estadísticas"""
-        if not self.trades:
+        """Ejecuta operaciones basadas en el análisis"""
+        if not analysis or 'signal' not in analysis:
             return
             
-        profitable_trades = [t for t in self.trades if t['profit'] > 0]
-        total_profit = sum(t['profit'] for t in self.trades)
-        win_rate = len(profitable_trades) / len(self.trades) * 100
+        current_price = analysis['price']
+        signal = analysis['signal']
         
-        logger.info(f"📊 ESTADÍSTICAS DE APRENDIZAJE:")
-        logger.info(f"   Operaciones totales: {len(self.trades)}")
-        logger.info(f"   Tasa de éxito: {win_rate:.1f}%")
-        logger.info(f"   Ganancia total: {total_profit:+.2f} USDT")
-        logger.info(f"   ROI: {(self.balance/self.initial_balance-1)*100:+.2f}%")
+        # Si no hay posición abierta, considerar abrir una
+        if self.position is None:
+            if signal == 1:  # Señal de compra
+                position_size = self.balance * self.max_position_size
+                quantity = position_size / current_price
+                
+                self.position = {
+                    'side': 'long',
+                    'entry_price': current_price,
+                    'quantity': quantity,
+                    'take_profit': current_price * (1 + self.take_profit_pct),
+                    'stop_loss': current_price * (1 - self.stop_loss_pct)
+                }
+                
+                logger.info(f"[COMPRA] {quantity:.4f} {self.symbol} @ ${current_price:.2f}")
+                
+            elif signal == -1:  # Señal de venta
+                position_size = self.balance * self.max_position_size
+                quantity = position_size / current_price
+                
+                self.position = {
+                    'side': 'short',
+                    'entry_price': current_price,
+                    'quantity': quantity,
+                    'take_profit': current_price * (1 - self.take_profit_pct),
+                    'stop_loss': current_price * (1 + self.stop_loss_pct)
+                }
+                
+                logger.info(f"[VENTA] {quantity:.4f} {self.symbol} @ ${current_price:.2f}")
+        
+        # Si hay posición abierta, verificar si debemos cerrarla
+        elif self.position:
+            profit = None
+            close_position = False
+            
+            if self.position['side'] == 'long':
+                profit = (current_price - self.position['entry_price']) * self.position['quantity']
+                # Cerrar si llegamos al take profit o stop loss
+                if (current_price >= self.position['take_profit'] or 
+                    current_price <= self.position['stop_loss'] or
+                    signal == -1):  # También cerrar si hay señal contraria
+                    close_position = True
+                    
+            elif self.position['side'] == 'short':
+                profit = (self.position['entry_price'] - current_price) * self.position['quantity']
+                # Cerrar si llegamos al take profit o stop loss
+                if (current_price <= self.position['take_profit'] or
+                    current_price >= self.position['stop_loss'] or
+                    signal == 1):  # También cerrar si hay señal contraria
+                    close_position = True
+            
+            if close_position:
+                self.balance += profit
+                self.trades.append({
+                    'entry_price': self.position['entry_price'],
+                    'exit_price': current_price,
+                    'quantity': self.position['quantity'],
+                    'side': self.position['side'],
+                    'profit': profit,
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+                logger.info(f"[CIERRE] {self.position['quantity']:.4f} {self.symbol} @ ${current_price:.2f} | " +
+                          f"{'Ganancia' if profit > 0 else 'Pérdida'}: ${profit:.2f}")
+                
+                self.position = None
+                
+                # Guarda el historial de trades
+                with open(f"{self.symbol}_trading_log.json", "w") as f:
+                    json.dump({"trades": self.trades}, f, indent=2)
+
+    def analyze_performance(self):
+        """Analiza el rendimiento del trading"""
+        if not self.trades:
+            logger.info("No hay trades para analizar")
+            return
+            
+        total_profit = sum(trade['profit'] for trade in self.trades)
+        win_trades = sum(1 for trade in self.trades if trade['profit'] > 0)
+        loss_trades = sum(1 for trade in self.trades if trade['profit'] < 0)
+        
+        logger.info(f"=== Análisis de Rendimiento ===")
+        logger.info(f"Balance inicial: ${self.initial_balance:.2f}")
+        logger.info(f"Balance final: ${self.balance:.2f}")
+        logger.info(f"Ganancia total: ${total_profit:.2f}")
+        logger.info(f"Trades ganadores: {win_trades}")
+        logger.info(f"Trades perdedores: {loss_trades}")
+        if self.trades:
+            win_rate = (win_trades / len(self.trades)) * 100
+            logger.info(f"Win rate: {win_rate:.1f}%")
 
 class LearningTradingBot:
     """Bot principal con capacidades de aprendizaje"""
@@ -223,112 +329,87 @@ class LearningTradingBot:
         self.engine = PaperTradingEngine()
         self.ws_client = None
         self.running = False
+        self.data_queue = asyncio.Queue()
         
     async def connect_to_market(self):
         """Conecta a datos de mercado en tiempo real"""
-        api_key = os.getenv("OKX_API_KEY")
-        secret_key = os.getenv("OKX_API_SECRET")
-        passphrase = os.getenv("OKX_PASSPHRASE")
-        
-        if not all([api_key, secret_key, passphrase]):
-            logger.error("Credenciales OKX no encontradas")
-            return False
+        self.ws_client = BinanceWebSocketClient(self.data_queue)
+        return await self.ws_client.connect()
             
-        self.ws_client = OKXWebSocketClient(api_key, secret_key, passphrase, data_queue)
-        self.ws_client.ws_url = "wss://ws.okx.com:8443/ws/v5/business"
-        
-        try:
-            await self.ws_client.connect()
-            await self.ws_client.subscribe([
-                {"channel": "candle1m", "instId": "SOL-USDT"}
-            ])
-            logger.info("Conectado a datos de mercado en tiempo real")
-            return True
-        except Exception as e:
-            logger.error(f"Error conectando: {e}")
-            return False
-    
     async def run_learning_mode(self):
         """Ejecuta el bot en modo aprendizaje"""
-        logger.info("🤖 Iniciando modo de aprendizaje automático")
-        logger.info("💰 Paper Trading activado - Sin riesgo real")
+        logger.info("[BOT] Iniciando modo de aprendizaje automático")
+        logger.info("[TRADING] Paper Trading activado - Sin riesgo real")
         
         if not await self.connect_to_market():
             return
-            
+        
+        # Suscribirse a los canales necesarios
+        await self.ws_client.subscribe([])
+        
         self.running = True
         last_candle_time = None
         
-        while self.running:
-            try:
-                if not data_queue.empty():
-                    data = data_queue.get_nowait()
+        # Iniciar recepción de mensajes en segundo plano
+        receiver_task = asyncio.create_task(self.ws_client.receive_messages())
+        
+        try:
+            while self.running:
+                try:
+                    data = await self.data_queue.get()
                     
-                    if 'data' in data and data['data']:
+                    if data['type'] == 'kline':
                         candle_data = data['data'][0]
                         
-                        # Convertir datos de vela
-                        processed_candle = {
-                            'timestamp': candle_data[0],
-                            'open': float(candle_data[1]),
-                            'high': float(candle_data[2]),
-                            'low': float(candle_data[3]),
-                            'close': float(candle_data[4]),
-                            'volume': float(candle_data[5])
-                        }
-                        
                         # Evitar procesar la misma vela múltiples veces
-                        if processed_candle['timestamp'] != last_candle_time:
-                            self.engine.market_data.append(processed_candle)
+                        if candle_data['timestamp'] != last_candle_time:
+                            self.engine.market_data.append(candle_data)
                             
                             # Mantener solo las últimas 100 velas
                             if len(self.engine.market_data) > 100:
                                 self.engine.market_data = self.engine.market_data[-100:]
                             
                             # Analizar mercado y ejecutar operaciones
-                            analysis = self.engine.analyze_market(processed_candle)
+                            analysis = self.engine.analyze_market(candle_data)
                             if analysis and analysis['signal']:
                                 self.engine.execute_trade(analysis)
                             
-                            last_candle_time = processed_candle['timestamp']
+                            last_candle_time = candle_data['timestamp']
                             
                             # Log de actividad cada 5 velas
                             if len(self.engine.market_data) % 5 == 0:
-                                logger.info(f"💹 SOL: ${processed_candle['close']:.4f} | "
+                                logger.info(f"[PRECIO] {self.engine.symbol}: ${candle_data['close']:.4f} | "
                                           f"Datos: {len(self.engine.market_data)} velas | "
                                           f"Balance: ${self.engine.balance:.2f}")
-                
-                await asyncio.sleep(1)
-                
-            except KeyboardInterrupt:
-                logger.info("Deteniendo bot por solicitud del usuario...")
-                break
-            except Exception as e:
-                logger.error(f"Error en bucle principal: {e}")
-                await asyncio.sleep(5)
-        
-        await self.shutdown()
+                    
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"Error en bucle principal: {e}")
+                    await asyncio.sleep(5)
+        finally:
+            receiver_task.cancel()
+            await self.shutdown()
     
     async def shutdown(self):
         """Cierra el bot limpiamente"""
         self.running = False
         if self.ws_client and self.ws_client.ws:
             await self.ws_client.ws.close()
-        
-        # Análisis final
         self.engine.analyze_performance()
-        logger.info("🛑 Bot detenido - Datos de aprendizaje guardados")
 
 async def main():
     """Función principal"""
     bot = LearningTradingBot()
-    
     try:
         await bot.run_learning_mode()
     except KeyboardInterrupt:
-        logger.info("Deteniendo bot...")
+        logger.info("Deteniendo bot por solicitud del usuario...")
     finally:
         await bot.shutdown()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

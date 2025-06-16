@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Union
+from data_loader import load_live_data, load_trading_log, load_technical_analysis, preprocess_data
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -229,38 +230,38 @@ def get_current_price(symbol: str) -> float:
         price = float(ticker['last'])
         logger.debug(f"Precio {symbol}: ${price} (Modo: {'DEMO' if use_demo else 'REAL'})")
         return price
-        except Exception as public_error:
-            logger.error(f"Error obteniendo precio con API pública: {public_error}")
-            
-        # MÉTODO 3: Intentar con datos recientes (respaldo)
-        df = get_market_data(symbol, "1m", 1)
+    except Exception as public_error:
+        logger.error(f"Error obteniendo precio con API pública: {public_error}")
         
-        if df is not None and not df.empty:
-            price = df['close'].iloc[-1]
-            logger.info(f"Precio de {symbol} desde datos recientes: ${price}")
-            return price
-        
-        # MÉTODO 4: Valores por defecto actualizados si no hay datos (última opción)
-        default_prices = {
-            "SOL-USDT": 178.75,  # Actualizado
-            "BTC-USDT": 68000.0,
-            "ETH-USDT": 3500.0,
-            "AVAX-USDT": 35.0,
-            "BNB-USDT": 600.0,
-            "MATIC-USDT": 0.8,
-            "ADA-USDT": 0.45,
-            "DOT-USDT": 7.5,
-            "LINK-USDT": 18.0,
-            "XRP-USDT": 0.55
-        }
-        
-        price = default_prices.get(symbol, 100.0)
-        logger.warning(f"Usando precio predeterminado para {symbol}: ${price}")
+    # MÉTODO 3: Intentar con datos recientes (respaldo)
+    df = get_market_data(symbol, "1m", 1)
+    
+    if df is not None and not df.empty:
+        price = df['close'].iloc[-1]
+        logger.info(f"Precio de {symbol} desde datos recientes: ${price}")
         return price
-        
-    except Exception as e:
-        logger.error(f"Error obteniendo precio actual: {e}")
-        return 178.75  # Valor de respaldo para SOL actualizado
+    
+    # MÉTODO 4: Valores por defecto actualizados si no hay datos (última opción)
+    default_prices = {
+        "SOL-USDT": 178.75,  # Actualizado
+        "BTC-USDT": 68000.0,
+        "ETH-USDT": 3500.0,
+        "AVAX-USDT": 35.0,
+        "BNB-USDT": 600.0,
+        "MATIC-USDT": 0.8,
+        "ADA-USDT": 0.45,
+        "DOT-USDT": 7.5,
+        "LINK-USDT": 18.0,
+        "XRP-USDT": 0.55
+    }
+    
+    price = default_prices.get(symbol, 100.0)
+    logger.warning(f"Usando precio predeterminado para {symbol}: ${price}")
+    return price
+    
+except Exception as e:
+    logger.error(f"Error obteniendo precio actual: {e}")
+    return 178.75  # Valor de respaldo para SOL actualizado
 
 def generate_test_data(symbol: str, timeframe: str = "15m", limit: int = 100) -> pd.DataFrame:
     """
@@ -352,7 +353,6 @@ def generate_test_data(symbol: str, timeframe: str = "15m", limit: int = 100) ->
     # Calcular precios con cambios acumulativos
     prices = [base_price]
     for change in changes[1:]:
-        new_price = prices[-1] * (1 + change)
         prices.append(new_price)
     
     # Simular velas OHLC y volumen

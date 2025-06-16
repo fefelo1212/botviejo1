@@ -1,0 +1,68 @@
+{
+  "symbol": "SOLUSDT",
+  "report_time": "2025-06-12T06:06:13.773120",
+  "current_price": {
+    "symbol": "SOLUSDT",
+    "price": 159.57,
+    "timestamp": "2025-06-12T06:06:13.254321",
+    "timestamp_ms": 1749719173254
+  },
+  "ticker_24hr": {
+    "symbol": "SOLUSDT",
+    "priceChange": -5.98,
+    "priceChangePercent": -3.612,
+    "weightedAvgPrice": 163.42898873,
+    "prevClosePrice": 165.55,
+    "lastPrice": 159.57,
+    "bidPrice": 159.56,
+    "askPrice": 159.57,
+    "openPrice": 165.55,
+    "highPrice": 168.36,
+    "lowPrice": 157.98,
+    "volume": 3666514.877,
+    "quoteVolume": 599214818.52368,
+    "openTime": 1749632772749,
+    "closeTime": 1749719172749,
+    "count": 2440736,
+    "timestamp": "2025-06-12T06:06:13.763458"
+  },
+  "downloaded_files": [
+    {
+      "filename": "SOLUSDT_15m_klines.csv",
+      "size_bytes": 127435,
+      "size_kb": 124.45
+    },
+    {
+      "filename": "SOLUSDT_1h_klines.csv",
+      "size_bytes": 130408,
+      "size_kb": 127.35
+    },
+    {
+      "filename": "SOLUSDT_1m_klines.csv",
+      "size_bytes": 121285,
+      "size_kb": 118.44
+    },
+    {
+      "filename": "SOLUSDT_24hr_ticker.json",
+      "size_bytes": 481,
+      "size_kb": 0.47
+    },
+    {
+      "filename": "SOLUSDT_5m_klines.csv",
+      "size_bytes": 124959,
+      "size_kb": 122.03
+    },
+    {
+      "filename": "SOLUSDT_orderbook.json",
+      "size_bytes": 8977,
+      "size_kb": 8.77
+    },
+    {
+      "filename": "SOLUSDT_recent_trades.json",
+      "size_bytes": 98395,
+      "size_kb": 96.09
+    }
+  ],
+  "total_files": 7,
+  "total_size_kb": 597.6
+}
