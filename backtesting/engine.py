@@ -11,6 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
+import joblib
 
 # Configurar logging
 logging.basicConfig(
@@ -25,7 +26,7 @@ class TradingSimulator:
     """
     
     def __init__(self, initial_balance: float = 10000.0, 
-                leverage: float = 1.0, commission: float = 0.001):
+                leverage: float = 1.0, commission: float = 0.00075):
         """
         Inicializa el simulador de trading
         
@@ -38,6 +39,20 @@ class TradingSimulator:
         self.leverage = leverage
         self.commission = commission
         self.reset()
+        
+        self.ml_model = None
+        self.ml_scaler = None
+        # self.data_processor = BinanceDataProcessor()  # ELIMINADA PARA COMPATIBILIDAD COLAB
+        self.feature_columns = [
+            'open', 'high', 'low', 'close', 'volume', 'quote_asset_volume', 
+            'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume',
+            'BB_UPPER', 'BB_LOWER', 'BB_MIDDLE',
+            'hour', 'day_of_week', 'day_of_month', 'month',
+            'sma_5', 'sma_20', 'sma_50', 
+            'ema_12', 'ema_26', 
+            'rsi', 
+            'macd', 'macd_signal', 'macd_histogram'
+        ]
     
     def reset(self):
         """Reinicia el simulador para una nueva simulación"""
@@ -349,6 +364,102 @@ class TradingSimulator:
             plt.close()
         else:
             plt.show()
+
+    def load_ml_model(self, model_path: str, scaler_path: str):
+        """Carga el modelo ML y el scaler desde archivos .joblib"""
+        try:
+            self.ml_model = joblib.load(model_path)
+            self.ml_scaler = joblib.load(scaler_path)
+            logging.info(f"Modelo ML cargado desde {model_path}")
+            logging.info(f"Scaler ML cargado desde {scaler_path}")
+        except FileNotFoundError as e:
+            logging.error(f"Error al cargar archivos de modelo/scaler: {e}")
+            raise
+
+    def _prepare_data_for_ml(self, klines_df: pd.DataFrame) -> pd.DataFrame:
+        # Instanciar el procesador localmente para compatibilidad Colab
+        from binance_data_processor import BinanceDataProcessor  # IMPORTADO AQUÍ PARA EVITAR PROBLEMAS DE IMPORTACIÓN CIRCULAR
+        data_processor = BinanceDataProcessor()
+        
+        if not isinstance(klines_df.index, pd.DatetimeIndex):
+            klines_df['open_time'] = pd.to_datetime(klines_df['open_time'])
+            klines_df.set_index('open_time', inplace=True)
+            logging.info("Índice de klines_df convertido a DatetimeIndex.")
+        numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'quote_asset_volume', 
+                        'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']
+        for col in numeric_cols:
+            if col in klines_df.columns:
+                klines_df[col] = pd.to_numeric(klines_df[col], errors='coerce')
+        processed_df = data_processor.process_data_chunk(klines_df.copy())
+        logging.info("Datos procesados con BinanceDataProcessor.")
+        missing_features = [col for col in self.feature_columns if col not in processed_df.columns]
+        if missing_features:
+            logging.warning(f"Faltan las siguientes características después del procesamiento: {missing_features}.")
+            for mf in missing_features:
+                processed_df[mf] = np.nan
+        X = processed_df[self.feature_columns]
+        y_true = processed_df['signal'] if 'signal' in processed_df.columns else None
+        combined_data = pd.concat([X, y_true], axis=1).dropna()
+        X_clean = combined_data[self.feature_columns]
+        y_true_clean = combined_data['signal']
+        if self.ml_scaler is None:
+            logging.error("Scaler ML no cargado. Llama a load_ml_model primero.")
+            raise ValueError("Scaler ML no cargado.")
+        X_scaled = self.ml_scaler.transform(X_clean)
+        logging.info("Características escaladas para la predicción del modelo.")
+        final_df = processed_df.loc[X_clean.index]
+        final_df['X_scaled'] = list(X_scaled)
+        final_df['true_signal'] = y_true_clean
+        return final_df
+
+    def run_ml_backtest(self, historical_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+        if self.ml_model is None or self.ml_scaler is None:
+            logging.error("Modelo ML o Scaler no cargados. Llama a load_ml_model() primero.")
+            raise ValueError("Modelo ML o Scaler no cargados.")
+        self.reset()
+        logging.info("Preparando datos históricos para el modelo ML...")
+        df_for_simulation = self._prepare_data_for_ml(historical_df.copy())
+        if df_for_simulation.empty:
+            logging.warning("DataFrame de simulación vacío después del preprocesamiento. No se puede ejecutar el backtest.")
+            return pd.DataFrame(), pd.Series()
+        logging.info(f"DataFrame de simulación listo. Filas para predicción: {len(df_for_simulation)}")
+        X_scaled_array = np.array(df_for_simulation['X_scaled'].tolist())
+        predictions = self.ml_model.predict(X_scaled_array)
+        df_for_simulation['predicted_signal'] = predictions
+        logging.info("Predicciones del modelo ML generadas.")
+        in_position = False
+        position_type = None
+        for i, (timestamp, row) in enumerate(df_for_simulation.iterrows()):
+            current_price = row['close']
+            predicted_signal = row['predicted_signal']
+            if predicted_signal == 1 and not in_position:
+                self.open_position('long', current_price, self.balance / current_price * 0.95, timestamp, reason='ML_BUY')
+                in_position = True
+                position_type = 'long'
+            elif predicted_signal == -1 and not in_position:
+                self.open_position('short', current_price, self.balance / current_price * 0.95, timestamp, reason='ML_SELL')
+                in_position = True
+                position_type = 'short'
+            elif predicted_signal == 0 and in_position:
+                self.close_position(current_price, timestamp, reason='ML_EXIT')
+                in_position = False
+                position_type = None
+            elif in_position and (
+                (position_type == 'long' and predicted_signal == -1) or
+                (position_type == 'short' and predicted_signal == 1)
+            ):
+                self.close_position(current_price, timestamp, reason='ML_REVERSE')
+                new_position_type = 'short' if position_type == 'long' else 'long'
+                self.open_position(new_position_type, current_price, self.balance / current_price * 0.95, timestamp, reason='ML_REVERSE_ENTRY')
+                in_position = True
+                position_type = new_position_type
+            self.update_equity(current_price, timestamp)
+        if in_position:
+            self.close_position(df_for_simulation.iloc[-1]['close'], df_for_simulation.index[-1], reason='ML_FINAL_EXIT')
+        trades_df = pd.DataFrame(self.trades)
+        equity_curve = pd.Series([e['equity'] for e in self.equity_history],
+                                 index=[e['timestamp'] for e in self.equity_history])
+        return trades_df, equity_curve
 
 class BacktestEngine:
     """
