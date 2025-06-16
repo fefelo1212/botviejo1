@@ -11,7 +11,7 @@ from imblearn.over_sampling import SMOTE
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def train_and_evaluate_model(
-    filepath="SOLUSDT_processed_big_dataset.csv",
+    filepath="drive/MyDrive/Botbinance/SOLUSDT_processed_big_dataset.csv",
     model_filename="random_forest_model.joblib",
     scaler_filename="min_max_scaler.joblib"
 ):
