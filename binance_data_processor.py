@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 class BinanceDataProcessor:
     """
     Procesador independiente de datos de Binance
-    Lee archivos descargados y los procesa para análisis técnico
+    Lee archivos descargados y los procesa para análisis técnico y define la variable objetivo (target).
     """
     
     def __init__(self, data_folder: str = "binance_data"):
@@ -37,225 +37,183 @@ class BinanceDataProcessor:
         # Esta función ya no será el punto principal para cargar el dataset grande.
         # Se mantendrá por si necesitas cargar archivos pequeños.
         try:
-            filename = f"{self.data_folder}/{symbol}_{interval}_klines.csv"
-            
-            if not os.path.exists(filename):
-                logging.warning(f"Archivo no encontrado: {filename}")
-                return None
-            
+            filename = f"{self.data_folder}/{symbol}_{interval}.csv"
+            logging.info(f"Cargando datos desde: {filename}")
             df = pd.read_csv(filename)
+            # Asegurarse de que las columnas de tiempo sean datetime
             df['open_time'] = pd.to_datetime(df['open_time'])
             df['close_time'] = pd.to_datetime(df['close_time'])
-            
-            # Ordenar por tiempo
-            df = df.sort_values('open_time').reset_index(drop=True)
-            
-            logging.info(f"Datos cargados: {filename}")
-            logging.info(f"Período: {df['open_time'].min()} a {df['open_time'].max()}")
-            logging.info(f"Total velas: {len(df)}")
-            
             return df
-            
+        except FileNotFoundError:
+            logging.error(f"Archivo no encontrado: {filename}")
+            return pd.DataFrame()
         except Exception as e:
-            logging.error(f"Error cargando datos {symbol} {interval}: {e}")
-            return None
-    
-    def load_current_price(self, symbol: str = "SOLUSDT") -> Dict:
-        """Carga precio actual desde archivo JSON"""
-        try:
-            filename = f"{self.data_folder}/{symbol}_24hr_ticker.json"
-            
-            if not os.path.exists(filename):
-                logging.warning(f"Archivo no encontrado: {filename}")
-                return None
-            
-            with open(filename, 'r') as f:
-                data = json.load(f)
-            
-            current_price = {
-                "symbol": data["symbol"],
-                "price": data["lastPrice"],
-                "change_24h": data["priceChangePercent"],
-                "volume": data["volume"],
-                "high_24h": data["highPrice"],
-                "low_24h": data["lowPrice"],
-                "timestamp": data["timestamp"]
-            }
-            
-            logging.info(f"Precio actual {symbol}: ${current_price['price']:.4f}")
-            return current_price
-            
-        except Exception as e:
-            logging.error(f"Error cargando precio actual {symbol}: {e}")
-            return None
+            logging.error(f"Error al cargar datos: {e}")
+            return pd.DataFrame()
 
-    # --- FUNCIONES DE CÁLCULO DE INDICADORES (IMPLEMENTACIONES DE PANDAS/NUMPY) ---
-    # Asegúrate de que las columnas de entrada (ej. 'close') sean de tipo float.
+    def calculate_sma(self, df: pd.DataFrame, windows: List[int]) -> pd.DataFrame:
+        """Calcula Simple Moving Average (SMA)"""
+        for w in windows:
+            df[f'sma_{w}'] = df['close'].rolling(window=w).mean()
+        return df
 
-    def calculate_sma(self, df: pd.DataFrame, periods: List[int] = [5, 20, 50]) -> pd.DataFrame:
-        """Calcula medias móviles simples usando Pandas."""
-        df_copy = df.copy()
-        for period in periods:
-            column_name = f"sma_{period}"
-            # Convertir a float antes del cálculo
-            df_copy[column_name] = df_copy['close'].astype(float).rolling(window=period).mean()
-        logging.info(f"SMAs calculadas: {periods} usando Pandas.")
-        return df_copy
-    
-    def calculate_ema(self, df: pd.DataFrame, periods: List[int] = [12, 26]) -> pd.DataFrame:
-        """Calcula medias móviles exponenciales usando Pandas."""
-        df_copy = df.copy()
-        for period in periods:
-            column_name = f"ema_{period}"
-            # Convertir a float antes del cálculo
-            df_copy[column_name] = df_copy['close'].astype(float).ewm(span=period, adjust=False).mean()
-        logging.info(f"EMAs calculadas: {periods} usando Pandas.")
-        return df_copy
-    
-    def calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
-        """Calcula RSI (Relative Strength Index) usando Pandas/NumPy."""
-        df_copy = df.copy()
-        # Asegurarse de que 'close' sea numérico.
-        delta = df_copy['close'].astype(float).diff(1)
-        gain = (delta.where(delta > 0, 0)).fillna(0)
-        loss = (-delta.where(delta < 0, 0)).fillna(0)
+    def calculate_ema(self, df: pd.DataFrame, windows: List[int]) -> pd.DataFrame:
+        """Calcula Exponential Moving Average (EMA)"""
+        for w in windows:
+            df[f'ema_{w}'] = df['close'].ewm(span=w, adjust=False).mean()
+        return df
 
-        avg_gain = gain.ewm(com=period-1, adjust=False).mean()
-        avg_loss = loss.ewm(com=period-1, adjust=False).mean()
+    def calculate_rsi(self, df: pd.DataFrame, window: int) -> pd.DataFrame:
+        """Calcula Relative Strength Index (RSI)"""
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        rs = gain / loss
+        df['rsi'] = 100 - (100 / (1 + rs))
+        return df
 
-        rs = avg_gain / avg_loss
-        df_copy['rsi'] = 100 - (100 / (1 + rs))
-        # Manejar casos de división por cero (si avg_loss es 0 y avg_gain no lo es)
-        df_copy['rsi'] = df_copy['rsi'].replace([np.inf, -np.inf], 100) # Si rs es inf, RSI es 100
-        df_copy['rsi'] = df_copy['rsi'].fillna(0) # Si avg_gain y avg_loss son 0, RSI es 0
-        
-        logging.info(f"RSI calculado (período {period}) usando Pandas/NumPy.")
-        return df_copy
-    
-    def calculate_bollinger_bands(self, df: pd.DataFrame, period: int = 20, std_dev: float = 2.0) -> pd.DataFrame:
-        """Calcula Bandas de Bollinger usando Pandas."""
-        df_copy = df.copy()
-        # Asegurarse de que 'close' sea numérico.
-        rolling_mean = df_copy['close'].astype(float).rolling(window=period).mean()
-        rolling_std = df_copy['close'].astype(float).rolling(window=period).std()
-        
-        df_copy['bb_middle'] = rolling_mean
-        df_copy['bb_upper'] = rolling_mean + (rolling_std * std_dev)
-        df_copy['bb_lower'] = rolling_mean - (rolling_std * std_dev)
-        logging.info(f"Bandas de Bollinger calculadas (período {period}, std {std_dev}) usando Pandas.")
-        return df_copy
-    
-    def calculate_macd(self, df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
-        """Calcula MACD usando Pandas."""
-        df_copy = df.copy()
-        # Asegurarse de que 'close' sea numérico.
-        fast_ema = df_copy['close'].astype(float).ewm(span=fast, adjust=False).mean()
-        slow_ema = df_copy['close'].astype(float).ewm(span=slow, adjust=False).mean()
-        
-        df_copy['macd'] = fast_ema - slow_ema
-        df_copy['macd_signal'] = df_copy['macd'].ewm(span=signal, adjust=False).mean()
-        df_copy['macd_histogram'] = df_copy['macd'] - df_copy['macd_signal']
-        logging.info(f"MACD calculado ({fast}, {slow}, {signal}) usando Pandas.")
-        return df_copy
+    def calculate_bollinger_bands(self, df: pd.DataFrame, window: int, num_std: float) -> pd.DataFrame:
+        """Calcula Bollinger Bands"""
+        df['rolling_mean'] = df['close'].rolling(window=window).mean()
+        df['rolling_std'] = df['close'].rolling(window=window).std()
+        df['BB_UPPER'] = df['rolling_mean'] + (df['rolling_std'] * num_std)
+        df['BB_LOWER'] = df['rolling_mean'] - (df['rolling_std'] * num_std)
+        # Puedes mantener bb_middle si lo usas en el backtester o como feature
+        df['BB_MIDDLE'] = df['rolling_mean'] # Renombramos para consistencia
+        df = df.drop(columns=['rolling_mean', 'rolling_std']) # Estas son intermedias
+        return df
+
+    def calculate_macd(self, df: pd.DataFrame, fast_period: int, slow_period: int, signal_period: int) -> pd.DataFrame:
+        """Calcula Moving Average Convergence Divergence (MACD)"""
+        ema_fast = df['close'].ewm(span=fast_period, adjust=False).mean()
+        ema_slow = df['close'].ewm(span=slow_period, adjust=False).mean()
+        df['macd'] = ema_fast - ema_slow
+        df['macd_signal'] = df['macd'].ewm(span=signal_period, adjust=False).mean()
+        df['macd_histogram'] = df['macd'] - df['macd_signal']
+        return df
 
     def detect_trading_signals(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Detecta señales de trading basadas en indicadores"""
-        try:
-            df_copy = df.copy()
-            
-            # Inicializar columnas de señales
-            df_copy['signal'] = 0
-            df_copy['signal_strength'] = 0.0
-            df_copy['signal_reason'] = ""
-            
-            # Señales SMA (cruce de medias)
-            if 'sma_5' in df_copy.columns and 'sma_20' in df_copy.columns:
-                # Usar .shift(1) para comparar con el valor anterior
-                sma_bullish = (df_copy['sma_5'] > df_copy['sma_20']) & (df_copy['sma_5'].shift(1) <= df_copy['sma_20'].shift(1))
-                sma_bearish = (df_copy['sma_5'] < df_copy['sma_20']) & (df_copy['sma_5'].shift(1) >= df_copy['sma_20'].shift(1))
-                
-                df_copy.loc[sma_bullish, 'signal'] = 1
-                df_copy.loc[sma_bullish, 'signal_reason'] = "SMA_CROSS_UP"
-                
-                df_copy.loc[sma_bearish, 'signal'] = -1
-                df_copy.loc[sma_bearish, 'signal_reason'] = "SMA_CROSS_DOWN"
-            
-            # Señales RSI
-            if 'rsi' in df_copy.columns:
-                rsi_oversold = df_copy['rsi'] < 30
-                rsi_overbought = df_copy['rsi'] > 70
-                
-                # Solo aplicar si no hay una señal SMA más fuerte o si la señal actual es 0
-                df_copy.loc[rsi_oversold & (df_copy['signal'] == 0), 'signal'] = 1
-                df_copy.loc[rsi_oversold & (df_copy['signal'] == 0), 'signal_reason'] = "RSI_OVERSOLD"
-                
-                df_copy.loc[rsi_overbought & (df_copy['signal'] == 0), 'signal'] = -1
-                df_copy.loc[rsi_overbought & (df_copy['signal'] == 0), 'signal_reason'] = "RSI_OVERBOUGHT"
-            
-            # Calcular fuerza de señal (simplificado para el chunking)
-            # La fuerza de la señal y la impresión detallada se hará en el procesamiento final.
-            # Por ahora, solo queremos que las columnas existan.
-            
-            return df_copy
-            
-        except Exception as e:
-            logging.error(f"Error detectando señales: {e}")
-            return df
+        """
+        Detecta señales de trading básicas basadas en indicadores.
+        Esta función ya NO es la fuente de la variable objetivo del ML.
+        Sus salidas 'signal', 'signal_reason', 'signal_strength' se excluirán de los features.
+        """
+        df['signal'] = 0  # 0: no signal
+        df['signal_reason'] = ''
+        df['signal_strength'] = 0.0
+
+        # Ejemplo de lógica antigua que ahora solo es informativa o para otros usos.
+        # Compra por cruce de SMA
+        buy_conditions_sma = (df['sma_5'] > df['sma_20']) & \
+                             (df['sma_5'].shift(1) <= df['sma_20'].shift(1))
+        df.loc[buy_conditions_sma, 'signal'] = 1
+        df.loc[buy_conditions_sma, 'signal_reason'] = 'SMA_Cross_Buy'
+        df.loc[buy_conditions_sma, 'signal_strength'] = 0.5
+
+        # Venta por cruce de SMA
+        sell_conditions_sma = (df['sma_5'] < df['sma_20']) & \
+                              (df['sma_5'].shift(1) >= df['sma_20'].shift(1))
+        df.loc[sell_conditions_sma, 'signal'] = -1
+        df.loc[sell_conditions_sma, 'signal_reason'] = 'SMA_Cross_Sell'
+        df.loc[sell_conditions_sma, 'signal_strength'] = 0.5
+
+        # Compra por RSI sobrevendido
+        buy_conditions_rsi = (df['rsi'] < 30) & (df['rsi'].shift(1) >= 30)
+        df.loc[buy_conditions_rsi & (df['signal'] == 0), 'signal'] = 1 # No sobrescribir SMA si ya hay señal
+        df.loc[buy_conditions_rsi & (df['signal_reason'] == ''), 'signal_reason'] = 'RSI_Oversold_Buy'
+        df.loc[buy_conditions_rsi & (df['signal_strength'] == 0), 'signal_strength'] = 0.3
+
+        # Venta por RSI sobrecomprado
+        sell_conditions_rsi = (df['rsi'] > 70) & (df['rsi'].shift(1) <= 70)
+        df.loc[sell_conditions_rsi & (df['signal'] == 0), 'signal'] = -1 # No sobrescribir SMA
+        df.loc[sell_conditions_rsi & (df['signal_reason'] == ''), 'signal_reason'] = 'RSI_Overbought_Sell'
+        df.loc[sell_conditions_rsi & (df['signal_strength'] == 0), 'signal_strength'] = 0.3
+        
+        return df
+
+    def calculate_time_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Extrae características temporales de open_time."""
+        df['hour'] = df['open_time'].dt.hour
+        df['day_of_week'] = df['open_time'].dt.dayofweek
+        df['day_of_month'] = df['open_time'].dt.day
+        df['month'] = df['open_time'].dt.month
+        return df
     
-    def calculate_support_resistance(self, df: pd.DataFrame, window: int = 20) -> Dict:
-        """Calcula niveles de soporte y resistencia (No se usará en el chunking, solo para análisis final)."""
-        logging.warning("calculate_support_resistance no está optimizado para procesamiento por chunks y puede ser lento en grandes DFs.")
-        try:
-            recent_data = df.tail(window * 3)  # Últimas velas para análisis
-            
-            # Máximos y mínimos locales
-            highs = recent_data['high'].rolling(window=window, center=True).max()
-            lows = recent_data['low'].rolling(window=window, center=True).min()
-            
-            # Niveles de resistencia (máximos frecuentes)
-            resistance_levels = highs.dropna().value_counts().head(3).index.tolist()
-            
-            # Niveles de soporte (mínimos frecuentes)  
-            support_levels = lows.dropna().value_counts().head(3).index.tolist()
-            
-            current_price = df['close'].iloc[-1]
-            
-            levels = {
-                "current_price": current_price,
-                "resistance_levels": resistance_levels,
-                "support_levels": support_levels,
-                "nearest_resistance": min([r for r in resistance_levels if r > current_price], default=None),
-                "nearest_support": max([s for s in support_levels if s < current_price], default=None)
-            }
-            
-            logging.info("Niveles de soporte y resistencia calculados.")
-            return levels
-            
-        except Exception as e:
-            logging.error(f"Error calculando soporte/resistencia: {e}")
-            return {}
+    def calculate_future_profitability_target(self, df: pd.DataFrame, 
+                                            price_change_percent_threshold: float = 0.005, 
+                                            horizon_candles: int = 5) -> pd.DataFrame:
+        """
+        Calcula una variable objetivo (target) basada en la rentabilidad futura.
+        
+        Args:
+            df (pd.DataFrame): DataFrame con la columna 'close'.
+            price_change_percent_threshold (float): Porcentaje de cambio de precio
+                                                    necesario para considerar una señal positiva (ej. 0.005 para 0.5%).
+            horizon_candles (int): Número de velas hacia adelante para calcular el retorno.
+                                   Un valor de 5 significa las próximas 5 velas.
+        Returns:
+            pd.DataFrame: DataFrame con la columna 'target' añadida.
+        """
+        # Calcula el precio de cierre 'horizon_candles' velas en el futuro.
+        df['future_close'] = df['close'].shift(-horizon_candles)
+        
+        # Calcular el retorno porcentual desde el cierre actual hasta el futuro_cierre
+        df['future_return'] = (df['future_close'] - df['close']) / df['close']
+        
+        # Definir el target: 1 si el retorno futuro excede el umbral, 0 en caso contrario.
+        # Las últimas 'horizon_candles' filas tendrán NaN en 'future_close'/'future_return',
+        # por lo que el target también será NaN y se eliminarán en train_model.py
+        df['target'] = np.where(df['future_return'] > price_change_percent_threshold, 1, 0)
+        
+        # Puedes eliminar las columnas intermedias si no las necesitas como features
+        df = df.drop(columns=['future_close', 'future_return'], errors='ignore')
+        
+        logging.info(f"Calculado target de rentabilidad futura: umbral={price_change_percent_threshold*100}%, horizonte={horizon_candles} velas.")
+        logging.info("Conteo de la nueva columna 'target':\n" + str(df['target'].value_counts(dropna=False)))
+
+        return df
 
     def process_data_chunk(self, chunk_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Procesa un chunk de datos, aplicando todos los indicadores técnicos.
-        Esta función está diseñada para ser llamada iterativamente.
+        Procesa un chunk de datos de velas, añadiendo todos los indicadores técnicos y el TARGET.
         """
         if chunk_df.empty:
             return chunk_df
         
-        # Asegurarse de que las columnas numéricas sean float
-        for col in ['open', 'high', 'low', 'close', 'volume']:
+        # Asegurarse de que los datos sean numéricos
+        numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'quote_asset_volume',
+                        'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume']
+        for col in numeric_cols:
             if col in chunk_df.columns:
                 chunk_df[col] = pd.to_numeric(chunk_df[col], errors='coerce')
+
+        # Eliminar NaNs al inicio causados por la conversión a numérico si aplica
+        initial_rows = len(chunk_df)
+        chunk_df.dropna(subset=numeric_cols, inplace=True)
+        if len(chunk_df) < initial_rows:
+            logging.warning(f"Se eliminaron {initial_rows - len(chunk_df)} filas con NaNs en columnas numéricas esenciales.")
+
+        # Asegurar que 'open_time' es datetime para funciones de tiempo
+        chunk_df['open_time'] = pd.to_datetime(chunk_df['open_time'])
+
+        # Cálculo de características temporales
+        chunk_df = self.calculate_time_features(chunk_df)
         
-        # Aplicar indicadores técnicos usando Pandas/NumPy
+        # Cálculo de indicadores técnicos
         chunk_df = self.calculate_sma(chunk_df, [5, 20, 50])
         chunk_df = self.calculate_ema(chunk_df, [12, 26])
         chunk_df = self.calculate_rsi(chunk_df, 14)
         chunk_df = self.calculate_bollinger_bands(chunk_df, 20, 2.0)
         chunk_df = self.calculate_macd(chunk_df, 12, 26, 9)
         
-        # Detectar señales
+        # --- NUEVA ADICIÓN CLAVE: Cálculo de la Variable Objetivo (Target) ---
+        # Definimos que si el precio sube 0.5% en las próximas 5 velas, es una señal de "compra exitosa" (target = 1)
+        # Puedes ajustar price_change_percent_threshold y horizon_candles
+        chunk_df = self.calculate_future_profitability_target(chunk_df, 
+                                                                price_change_percent_threshold=0.005, 
+                                                                horizon_candles=5)
+        
+        # Detectar señales (la función antigua, ahora solo informativa o para otros usos, no el target del ML)
         chunk_df = self.detect_trading_signals(chunk_df)
 
         return chunk_df
@@ -268,16 +226,21 @@ if __name__ == "__main__":
     data = {
         'open_time': pd.to_datetime(['2023-01-01 00:00:00', '2023-01-01 00:01:00', '2023-01-01 00:02:00', '2023-01-01 00:03:00', '2023-01-01 00:04:00'] * 10),
         'open': np.random.rand(50) * 100 + 1000,
-        'high': np.random.rand(50) * 100 + 1050,
-        'low': np.random.rand(50) * 100 + 950,
+        'high': np.random.rand(50) * 100 + 1000,
+        'low': np.random.rand(50) * 100 + 1000,
         'close': np.random.rand(50) * 100 + 1000,
-        'volume': np.random.rand(50) * 1000
+        'volume': np.random.rand(50) * 1000,
+        'quote_asset_volume': np.random.rand(50) * 100000,
+        'number_of_trades': np.random.randint(100, 1000, 50),
+        'taker_buy_base_asset_volume': np.random.rand(50) * 500,
+        'taker_buy_quote_asset_volume': np.random.rand(50) * 50000,
+        'close_time': pd.to_datetime(['2023-01-01 00:00:59', '2023-01-01 00:01:59', '2023-01-01 00:02:59', '2023-01-01 00:03:59', '2023-01-01 00:04:59'] * 10),
     }
-    test_df = pd.DataFrame(data)
-    test_df['close'] = test_df['close'].sort_values().values # Asegurar una tendencia para indicadores
-
+    sample_df = pd.DataFrame(data)
+    
     processor = BinanceDataProcessor()
-    processed_test_chunk = processor.process_data_chunk(test_df)
-    logging.info("Chunk de prueba procesado. Primeras 5 filas:")
-    logging.info(processed_test_chunk.head())
-    logging.info(f"Columnas del chunk procesado: {processed_test_chunk.columns.tolist()}")
+    processed_sample_df = processor.process_data_chunk(sample_df)
+    print("\nDataFrame de prueba procesado (primeras 5 filas):")
+    print(processed_sample_df.head())
+    print("\nConteo de la columna 'target' en el ejemplo:")
+    print(processed_sample_df['target'].value_counts(dropna=False))

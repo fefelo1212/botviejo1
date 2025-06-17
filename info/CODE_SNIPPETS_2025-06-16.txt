@@ -1,0 +1,94 @@
+# CODE_SNIPPETS y Comandos Útiles
+
+## Inspección de features del modelo ML en Colab
+
+```python
+import joblib
+import os
+from google.colab import drive
+drive.mount('/content/drive')
+MODEL_PATH = '/content/drive/MyDrive/Botbinance/random_forest_model.joblib'
+loaded_model = joblib.load(MODEL_PATH)
+if hasattr(loaded_model, 'feature_names_in_'):
+    print(loaded_model.feature_names_in_)
+```
+
+## Ejemplo de carga y preprocesamiento de datos históricos para backtest
+
+```python
+# historical_df_for_backtest = pd.read_csv(HISTORICAL_DATA_PATH, index_col='open_time', parse_dates=True)
+# Asegurar tipos numéricos y dropna para columnas críticas:
+numeric_cols_to_convert = ['open', 'high', 'low', 'close', 'volume', ...]
+for col in numeric_cols_to_convert:
+    if col in historical_df_for_backtest.columns:
+        historical_df_for_backtest[col] = pd.to_numeric(historical_df_for_backtest[col], errors='coerce')
+historical_df_for_backtest.dropna(subset=['close', 'high', 'low', 'volume'], inplace=True)
+```
+
+## Comando para ejecutar el backtest principal
+
+```python
+# Asumiendo que TradingSimulator y BinanceDataProcessor están definidos en celdas previas
+df_historical = pd.read_csv(HISTORICAL_DATA_PATH)
+df_historical['open_time'] = pd.to_datetime(df_historical['open_time'])
+df_historical.set_index('open_time', inplace=True)
+simulator = TradingSimulator(initial_balance=10000, leverage=1.0, commission=0.00075)
+simulator.load_ml_model(MODEL_PATH, SCALER_PATH)
+simulator.run_ml_backtest(df_historical)
+```
+
+## Estructura de carpetas esperada en Google Drive
+
+```
+MyDrive/Botbinance/
+    random_forest_model.joblib
+    min_max_scaler.joblib
+    SOLUSDT_processed_big_dataset.csv
+    backtest_results_ml/
+```
+
+---
+
+# INFORMACIÓN CLAVE DEL ENTRENAMIENTO DEL MODELO ML (2025-06-16)
+
+## Script de Entrenamiento
+- Script principal: `train_model.py`.
+- Función principal: `train_and_evaluate_model`.
+- Procesamiento de datos en chunks con `prepare_data_for_ml_chunked`.
+
+## Definición de la Variable Objetivo (target)
+- Variable objetivo: `signal`.
+- Definición: Asignada en `binance_data_processor.py` por la función `detect_trading_signals`.
+  - `1`: señal de compra (cruce alcista SMA, RSI < 30, etc.)
+  - `-1`: señal de venta (cruce bajista SMA, RSI > 70, etc.)
+  - `0`: sin señal
+- Para el entrenamiento: Se usa la columna `signal` como target (probablemente binarizada para el modelo).
+
+## Features Usadas
+- Se excluyen: `open_time`, `close_time`, `open`, `high`, `low`, `signal_reason`, `signal_strength`, `bb_upper`, `bb_middle`, `bb_lower`, `volume`, `target`, y otros indicadores redundantes.
+- Se usan el resto de columnas generadas por `BinanceDataProcessor` (SMA, EMA, RSI, MACD, Bollinger Bands, etc.).
+- Preprocesamiento: Conversión a numérico, eliminación de NaNs, escalado con `MinMaxScaler`.
+
+## Hiperparámetros del RandomForestClassifier
+- `n_estimators=50`
+- `random_state=42`
+- `n_jobs=-1`
+- No se especifica `max_depth` (valor por defecto).
+
+## División de Datos
+- 70% entrenamiento, 30% temporal (validación + test)
+- El 30% temporal se divide en 50% validación, 50% test
+- Se usa `stratify=y` (no división temporal explícita)
+
+## Métricas de Evaluación
+- `accuracy_score`
+- `classification_report` (precision, recall, f1-score)
+- `confusion_matrix`
+- Evaluación en validación y test
+
+## Balanceo de Clases
+- Se aplica SMOTE al conjunto de entrenamiento antes de entrenar el modelo.
+
+---
+
+Guarda y actualiza este archivo con cualquier fragmento de código o comando útil que quieras recordar para futuras sesiones.
