@@ -1,0 +1,54 @@
+# Pendientes y Estado del Proyecto (consolidado)
+
+## Pendientes del proyecto
+
+1. **Final Testing:**
+   - Run the bot to confirm that it initializes correctly, processes data, and saves it to the database without errors.
+   - Verify that the database (`market_data.db`) contains the expected data using `verificar_db.py`.
+
+2. **Error Handling:**
+   - Ensure robust error handling for any remaining edge cases during bot execution.
+
+3. **Folder and File Verification:**
+   - Confirm that the `info/` folder exists and contains the necessary logs.
+   - Verify that the new `market_data.db` file is created with the correct schema.
+
+4. **Data Validation:**
+   - Compress and share the `info/` folder for further analysis of saved data.
+
+---
+
+## Estado Actual del Proyecto (11/6/2025)
+
+### Archivos Relevantes
+- **data_loader.py:**
+  - Carga y preprocesa los datos generados por el bot.
+  - Funciones: `load_live_data`, `load_trading_log`, `load_technical_analysis`, `preprocess_data`.
+- **market_data.py:**
+  - Módulo que gestiona los datos de mercado para el bot.
+- **trading_bot.py:**
+  - Archivo principal del bot que toma decisiones de trading.
+
+### Flujo Actual
+- **Generación de Datos:**
+  - `binance_local_trader.py` genera los archivos: `SOLUSDT_live_data.csv`, `SOLUSDT_trading_log.json`, `SOLUSDT_technical_analysis.csv`.
+- **Carga y Preprocesamiento:**
+  - `data_loader.py` carga y combina los datos generados en un único DataFrame.
+- **Gestión de Datos:**
+  - `data_management.market_data` gestiona los datos de mercado y los expone al bot.
+- **Toma de Decisiones:**
+  - El bot (`trading_bot.py`) consume los datos gestionados por `data_management.market_data`.
+
+### Problemas Detectados
+- Dependencia de la columna `timestamp` en los CSV.
+- Falta de integración directa entre `data_loader.py` y `data_management.market_data`.
+- Compatibilidad con datos faltantes.
+
+### Próximos Pasos
+- Revisar `market_data.py` y su integración.
+- Diseñar un módulo intermedio para conectar `data_loader.py` y `market_data.py`.
+- Validar el flujo completo de integración.
+
+---
+
+_Archivo consolidado por GitHub Copilot el 17/06/2025._

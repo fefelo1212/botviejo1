@@ -25,6 +25,15 @@ def prepare_data_for_ml_chunked(
     procesando cada chunk y guardándolo en Google Drive para persistencia.
     Luego, carga y concatena los chunks procesados para el entrenamiento.
     """
+    # Si filepath es una lista de archivos, los concatenamos antes de procesar por chunks
+    if isinstance(filepath, list):
+        logging.info(f"Concatenando {len(filepath)} archivos de datos brutos SOLUSDT...")
+        df_list = [pd.read_csv(f) for f in filepath]
+        full_df = pd.concat(df_list, ignore_index=True)
+        # Guardar temporalmente el archivo concatenado para procesamiento por chunks
+        temp_concat_path = os.path.join(processed_chunks_base_dir, "SOLUSDT_full_concat.csv")
+        full_df.to_csv(temp_concat_path, index=False)
+        filepath = temp_concat_path
     if not os.path.exists(filepath):
         logging.error(f"Archivo de dataset no encontrado: {filepath}")
         return None, None, None, None, None, None, None
@@ -47,7 +56,7 @@ def prepare_data_for_ml_chunked(
     current_start_row = 1
     chunk_idx = 0
     overlap_buffer = pd.DataFrame()
-    csv_iterator = pd.read_csv(filepath, chunksize=chunksize_rows, iterator=True)
+    csv_iterator = pd.read_csv(filepath, chunksize=chunksize_rows, iterator=True, nrows=50000)
     processed_chunk_files = []
 
     while True:
@@ -82,7 +91,7 @@ def prepare_data_for_ml_chunked(
         # Ahora el target (ej. 'future_return') es clave, además de los indicadores.
         # Asumiendo que el nuevo target tendrá NaNs al final si se usa .shift(-N)
         first_valid_row_idx = processed_combined_df.dropna(
-            subset=['rsi', 'sma_20', 'ema_26', 'macd', 'target'] # Aseguramos que el target también esté presente
+            subset=['rsi', 'sma_20', 'ema_26', 'MACD', 'MACD_SIGNAL', 'MACD_HIST', 'target'] # Indicadores y target en mayúsculas
         ).index.min()
         
         if first_valid_row_idx is None:
@@ -245,6 +254,15 @@ def train_and_evaluate_model(
     logging.info(f"Forma de y_train después de SMOTE: {y_train_resampled.shape}")
     logging.info("Conteo de la variable objetivo en y_train_resampled:\n" + str(pd.Series(y_train_resampled).value_counts()))
     
+    # Guardar el conteo de clases del target antes de SMOTE y entrenamiento
+    import pandas as pd
+    target_counts = pd.Series(y_train).value_counts(dropna=False)
+    os.makedirs(os.path.join(BASE_DIR, 'info'), exist_ok=True)
+    with open(os.path.join(BASE_DIR, 'info', 'target_value_counts.txt'), 'w') as f:
+        f.write('Conteo de clases de la variable target (y_train) antes de SMOTE y entrenamiento:\n')
+        f.write(str(target_counts))
+    logging.info(f"Conteo de clases de la variable target guardado en info/target_value_counts.txt: {target_counts.to_dict()}")
+    
     X_train = X_train_resampled
     y_train = y_train_resampled
     
@@ -284,16 +302,42 @@ def train_and_evaluate_model(
     logging.info("Entrenamiento y evaluación del modelo completados.")
 
 if __name__ == "__main__":
-    BIG_DATASET_PATH = "/content/drive/MyDrive/Botbinance/SOLUSDT_processed_big_dataset.csv"
-    PROCESSED_CHUNKS_DIR = "/content/drive/MyDrive/Botbinance/temp_processed_chunks"
-    MODEL_SAVE_PATH = "/content/drive/MyDrive/Botbinance/random_forest_model.joblib"
-    SCALER_SAVE_PATH = "/content/drive/MyDrive/Botbinance/min_max_scaler.joblib"
-    
+    # Define la BASE_DIR para que sea la carpeta donde está este script
+    BASE_DIR = os.path.dirname(__file__)
+
+    # Buscar solo el primer archivo mensual de SOLUSDT
+    RAW_DATA_DIR = os.path.join(BASE_DIR, "binance_data")
+    solusdt_files = sorted(glob.glob(os.path.join(RAW_DATA_DIR, 'SOLUSDT_raw_historical_data_*.csv')))
+    solusdt_files = solusdt_files[:1]  # Solo el primer archivo
+
+    if not solusdt_files:
+        raise FileNotFoundError("No se encontraron archivos SOLUSDT_raw_historical_data_*.csv en binance_data/")
+
+    # La ruta para cargar el dataset BRUTO ahora será una lista de archivos
+    BIG_DATASET_PATH = solusdt_files
+
+    # Define las rutas de entrada/salida basándose en BASE_DIR
+    PROCESSED_DATA_DIR = os.path.join(BASE_DIR, "processed_data")
+    MODELS_DIR = os.path.join(BASE_DIR, "ml_models")
+
+    # Asegura que las carpetas de salida existan
+    os.makedirs(PROCESSED_DATA_DIR, exist_ok=True)
+    os.makedirs(MODELS_DIR, exist_ok=True)
+
+    # La ruta donde se guardarán los chunks procesados (temporalmente o el final si no hay concat)
+    PROCESSED_DATASET_FILENAME = 'SOLUSDT_processed_small_dataset.csv'
+    FINAL_PROCESSED_DATASET_PATH = os.path.join(PROCESSED_DATA_DIR, PROCESSED_DATASET_FILENAME)
+
+    # Rutas para guardar el modelo y el escalador
+    MODEL_SAVE_PATH = os.path.join(MODELS_DIR, 'random_forest_model.joblib')
+    SCALER_SAVE_PATH = os.path.join(MODELS_DIR, 'min_max_scaler.joblib')
+
+    # Llama a la función principal para entrenar y guardar el modelo y el dataset procesado
     train_and_evaluate_model(
         filepath=BIG_DATASET_PATH,
         model_filename=MODEL_SAVE_PATH,
         scaler_filename=SCALER_SAVE_PATH,
         chunk_size_mb=10, 
         overlap_candles=100,
-        processed_chunks_base_dir=PROCESSED_CHUNKS_DIR
+        processed_chunks_base_dir=PROCESSED_DATA_DIR
     )

@@ -4,10 +4,20 @@ import time # Necesario para time.sleep
 import math # Necesario para math.pow
 import sqlite3
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class DatabaseHandler:
-    def __init__(self, db_path='market_data.db'):
-        self.db_path = db_path
+    def __init__(self, db_path=None):
+        if db_path is None:
+            self.db_path = os.getenv("DATABASE_PATH", "market_data.db")
+        else:
+            self.db_path = db_path
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
         self.conn = None
         self.logger = logging.getLogger(__name__)
         # Configuración para reintentos

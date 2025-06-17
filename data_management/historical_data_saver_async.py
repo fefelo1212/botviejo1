@@ -2,12 +2,18 @@ import aiosqlite
 import logging
 import os
 from typing import Dict, Any
+from dotenv import load_dotenv
 
 logger = logging.getLogger("SolanaScalper")
 
+load_dotenv()
+
 class HistoricalDataSaver:
-    def __init__(self, db_path="data/market_data.db"):
-        self.db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', "market_data.db")
+    def __init__(self, db_path=None):
+        if db_path is None:
+            self.db_path = os.getenv("DATABASE_PATH", "data/market_data.db")
+        else:
+            self.db_path = db_path
         db_dir = os.path.dirname(self.db_path)
         if db_dir and not os.path.exists(db_dir):
             os.makedirs(db_dir, exist_ok=True)

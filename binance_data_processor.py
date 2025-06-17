@@ -164,37 +164,76 @@ class BinanceDataProcessor:
         df['month'] = df['open_time'].dt.month
         return df
     
-    def calculate_future_profitability_target(self, df: pd.DataFrame, 
-                                            price_change_percent_threshold: float = 0.005, 
-                                            horizon_candles: int = 5) -> pd.DataFrame:
-        """
-        Calcula una variable objetivo (target) basada en la rentabilidad futura.
-        
-        Args:
-            df (pd.DataFrame): DataFrame con la columna 'close'.
-            price_change_percent_threshold (float): Porcentaje de cambio de precio
-                                                    necesario para considerar una señal positiva (ej. 0.005 para 0.5%).
-            horizon_candles (int): Número de velas hacia adelante para calcular el retorno.
-                                   Un valor de 5 significa las próximas 5 velas.
-        Returns:
-            pd.DataFrame: DataFrame con la columna 'target' añadida.
-        """
-        # Calcula el precio de cierre 'horizon_candles' velas en el futuro.
+    def calculate_future_profitability_target(self,
+                                            df: pd.DataFrame,
+                                            price_change_percent_threshold: float = 0.005,
+                                            horizon_candles: int = 5
+                                           ) -> pd.DataFrame:
+        if df.empty:
+            print("--- DEBUG: DataFrame de entrada a calculate_future_profitability_target está vacío. ---")
+            return df # O manejar según sea necesario
+            
+        print(f"\n--- DEBUG: Iniciando cálculo de target. Filas iniciales: {len(df)} ---")
+        print(f"--- DEBUG: Threshold: {price_change_percent_threshold}, Horizon: {horizon_candles} ---")
+
+        # Paso 1: Calcular future_close
         df['future_close'] = df['close'].shift(-horizon_candles)
+        print("\n--- DEBUG: Columnas después de 'future_close' calculada ---")
+        print(df.columns.tolist())
+        print("\n--- DEBUG: Primeras 10 filas de 'close' y 'future_close' ---")
+        print(df[['close', 'future_close']].head(10).to_string())
         
-        # Calcular el retorno porcentual desde el cierre actual hasta el futuro_cierre
+        # Paso 2: Calcular future_return
         df['future_return'] = (df['future_close'] - df['close']) / df['close']
+        print("\n--- DEBUG: Primeras 10 filas de 'future_return' ---")
+        print(df['future_return'].head(10).to_string())
+        print("\n--- DEBUG: Estadísticas descriptivas de 'future_return' ---")
+        print(df['future_return'].describe().to_string())
+        print("\n--- DEBUG: Conteo de valores únicos en 'future_return' (con NaNs) ---")
+        print(df['future_return'].value_counts(dropna=False).to_string())
+
+        # Paso 3: Definir las condiciones y asignar el target
+        conditions = [
+            df['future_return'] > price_change_percent_threshold,         # Subida (target 1)
+            df['future_return'] < -price_change_percent_threshold         # Bajada (target -1)
+        ]
+        choices = [1, -1]
+        df['target'] = np.select(conditions, choices, default=0)
         
-        # Definir el target: 1 si el retorno futuro excede el umbral, 0 en caso contrario.
-        # Las últimas 'horizon_candles' filas tendrán NaN en 'future_close'/'future_return',
-        # por lo que el target también será NaN y se eliminarán en train_model.py
-        df['target'] = np.where(df['future_return'] > price_change_percent_threshold, 1, 0)
+        # Paso 4: Manejar NaNs en el target (por ejemplo, si future_return fue NaN)
+        df['target'] = df['target'].where(df['future_return'].notna(), np.nan)
+
+        print("\n--- DEBUG: Primeras 10 filas de 'target' después del cálculo ---")
+        print(df['target'].head(10).to_string())
+        print("\n--- DEBUG: Conteo FINAL de la columna 'target' (con NaNs):\n", df['target'].value_counts(dropna=False).to_string())
+
+        # Guardar un fragmento para depuración manual (si la carpeta info existe y se puede escribir)
+        debug_info_dir = "info"
+        if not os.path.exists(debug_info_dir):
+            os.makedirs(debug_info_dir)
+            logging.info(f"Carpeta '{debug_info_dir}' creada para depuración.")
         
+        debug_sample_path = os.path.join(debug_info_dir, "debug_target_sample.csv")
+        try:
+            # Selecciona las columnas relevantes y las primeras 100 filas
+            debug_df = df[['open_time', 'close', 'future_close', 'future_return', 'target']].head(100)
+            if not debug_df.empty:
+                debug_df.to_csv(debug_sample_path, index=False)
+                logging.info(f"Fragmento de depuración guardado en: {debug_sample_path}")
+            else:
+                logging.warning("No hay datos en el DataFrame para guardar el fragmento de depuración.")
+        except Exception as e:
+            logging.error(f"Error al guardar debug_target_sample.csv: {e}")
+
         # Puedes eliminar las columnas intermedias si no las necesitas como features
-        df = df.drop(columns=['future_close', 'future_return'], errors='ignore')
+        # Las comentamos TEMPORALMENTE para depuración.
+        # df = df.drop(columns=['future_close', 'future_return'], errors='ignore')
         
-        logging.info(f"Calculado target de rentabilidad futura: umbral={price_change_percent_threshold*100}%, horizonte={horizon_candles} velas.")
-        logging.info("Conteo de la nueva columna 'target':\n" + str(df['target'].value_counts(dropna=False)))
+        # Filtrar filas con NaNs en el target, si es necesario para el entrenamiento posterior
+        # Pero para la depuración de este punto, queremos ver los NaNs.
+        # df = df.dropna(subset=['target']) # Esta línea debe manejarse más tarde en train_model.py si aplica
+
+        print(f"--- DEBUG: Finalizando cálculo de target. Filas finales: {len(df)} ---")
 
         return df
 
@@ -235,7 +274,7 @@ class BinanceDataProcessor:
         # Definimos que si el precio sube 0.5% en las próximas 5 velas, es una señal de "compra exitosa" (target = 1)
         # Puedes ajustar price_change_percent_threshold y horizon_candles
         chunk_df = self.calculate_future_profitability_target(chunk_df, 
-                                                                price_change_percent_threshold=0.005, 
+                                                                price_change_percent_threshold=0.0, 
                                                                 horizon_candles=5)
         
         # Detectar señales (la función antigua, ahora solo informativa o para otros usos, no el target del ML)
