@@ -2,13 +2,21 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from backtesting.engine import TradingSimulator  # COMENTADO PARA COMPATIBILIDAD COLAB
+from backtesting.engine import TradingSimulator
 
-# --- RUTAS DE ARCHIVOS (Ajustar en Colab) ---
-MODEL_PATH = 'random_forest_model.joblib'
-SCALER_PATH = 'min_max_scaler.joblib'
-HISTORICAL_DATA_PATH = 'SOLUSDT_processed_small_dataset.csv'  # <--- ASEGÚRATE QUE ESTA LÍNEA ESTÉ ASÍ
-OUTPUT_RESULTS_DIR = "backtest_results"
+# --- RUTAS DE ARCHIVOS (Ajustar si es necesario la base) ---
+# BASE_DIR será la carpeta donde se encuentre este script (ej: C:\proyectos\MODULO BINANCE\botviejo1)
+BASE_DIR = os.path.dirname(__file__)
+
+# Rutas para datos y modelos (asumiendo que están en subcarpetas)
+DATA_DIR = os.path.join(BASE_DIR, "processed_data") # O "data" si así se llama tu carpeta de datos
+MODELS_DIR = os.path.join(BASE_DIR, "ml_models")    # O "models" si así se llama tu carpeta de modelos
+
+MODEL_PATH = os.path.join(MODELS_DIR, 'random_forest_model.joblib')
+SCALER_PATH = os.path.join(MODELS_DIR, 'min_max_scaler.joblib')
+HISTORICAL_DATA_PATH = os.path.join(DATA_DIR, 'SOLUSDT_processed_small_dataset.csv')
+
+OUTPUT_RESULTS_DIR = os.path.join(BASE_DIR, "backtest_results") # Carpeta para resultados
 
 INITIAL_CAPITAL = 10000.0
 LEVERAGE = 1.0
@@ -16,10 +24,17 @@ COMMISSION_RATE = 0.00075
 
 if __name__ == "__main__":
     print("Iniciando Backtest del Modelo de Machine Learning...")
+
+    # Crear directorios si no existen
+    os.makedirs(OUTPUT_RESULTS_DIR, exist_ok=True)
+    # No creamos DATA_DIR o MODELS_DIR aquí, asumimos que el proceso de
+    # pre-procesamiento o entrenamiento ya los crea y llena.
+
     for path in [MODEL_PATH, SCALER_PATH, HISTORICAL_DATA_PATH]:
         if not os.path.exists(path):
             print(f"Error: Archivo no encontrado: {path}")
-            print("Por favor, verifica las rutas en run_ml_backtest.py y ajústalas para tu entorno.")
+            print(f"Por favor, asegúrate de que el archivo '{os.path.basename(path)}' exista en '{os.path.dirname(path)}'.")
+            print("Si es tu primera ejecución, podrías necesitar generar los datos procesados y entrenar el modelo primero.")
             exit()
     # Instanciar TradingSimulator (en Colab, debe estar definida globalmente)
     simulator = TradingSimulator(
