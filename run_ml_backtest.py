@@ -2,12 +2,12 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-# from backtesting.engine import TradingSimulator  # COMENTADO PARA COMPATIBILIDAD COLAB
+from backtesting.engine import TradingSimulator  # COMENTADO PARA COMPATIBILIDAD COLAB
 
 # --- RUTAS DE ARCHIVOS (Ajustar en Colab) ---
 MODEL_PATH = 'random_forest_model.joblib'
 SCALER_PATH = 'min_max_scaler.joblib'
-HISTORICAL_DATA_PATH = 'SOLUSDT_full_processed_for_ml.csv'
+HISTORICAL_DATA_PATH = 'SOLUSDT_processed_small_dataset.csv'  # <--- ASEGÚRATE QUE ESTA LÍNEA ESTÉ ASÍ
 OUTPUT_RESULTS_DIR = "backtest_results"
 
 INITIAL_CAPITAL = 10000.0

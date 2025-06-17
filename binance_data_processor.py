@@ -72,24 +72,49 @@ class BinanceDataProcessor:
         df['rsi'] = 100 - (100 / (1 + rs))
         return df
 
-    def calculate_bollinger_bands(self, df: pd.DataFrame, window: int, num_std: float) -> pd.DataFrame:
-        """Calcula Bollinger Bands"""
-        df['rolling_mean'] = df['close'].rolling(window=window).mean()
-        df['rolling_std'] = df['close'].rolling(window=window).std()
-        df['BB_UPPER'] = df['rolling_mean'] + (df['rolling_std'] * num_std)
-        df['BB_LOWER'] = df['rolling_mean'] - (df['rolling_std'] * num_std)
-        # Puedes mantener bb_middle si lo usas en el backtester o como feature
-        df['BB_MIDDLE'] = df['rolling_mean'] # Renombramos para consistencia
-        df = df.drop(columns=['rolling_mean', 'rolling_std']) # Estas son intermedias
+    def calculate_bollinger_bands(self, df: pd.DataFrame, window: int = 20, num_std: float = 2.0) -> pd.DataFrame:
+        """
+        Calcula las Bandas de Bollinger y añade las columnas al DataFrame.
+        Las columnas BB_SMA y BB_STD son la media móvil y la desviación estándar
+        que son directamente características para el modelo ML.
+        """
+        if len(df) < window:
+            logging.warning(f"No hay suficientes datos ({len(df)}) para calcular Bandas de Bollinger con ventana {window}. Retornando DataFrame original.")
+            return df
+
+        df['BB_SMA'] = df['close'].rolling(window=window).mean()
+        df['BB_STD'] = df['close'].rolling(window=window).std()
+
+        df['BB_UPPER'] = df['BB_SMA'] + (df['BB_STD'] * num_std)
+        df['BB_LOWER'] = df['BB_SMA'] - (df['BB_STD'] * num_std)
+
+        logging.debug(f"Bandas de Bollinger calculadas. Columnas añadidas: BB_UPPER, BB_LOWER, BB_SMA, BB_STD")
         return df
 
-    def calculate_macd(self, df: pd.DataFrame, fast_period: int, slow_period: int, signal_period: int) -> pd.DataFrame:
-        """Calcula Moving Average Convergence Divergence (MACD)"""
+    def calculate_macd(self, df: pd.DataFrame, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9) -> pd.DataFrame:
+        """
+        Calcula Moving Average Convergence Divergence (MACD)
+        Añade las columnas 'MACD', 'MACD_SIGNAL', 'MACD_HIST' al DataFrame.
+        """
+        if len(df) < slow_period:
+            logging.warning(f"No hay suficientes datos ({len(df)}) para calcular MACD con periodo lento {slow_period}. Retornando DataFrame original.")
+            return df
+
+        if not pd.api.types.is_numeric_dtype(df['close']):
+            df['close'] = pd.to_numeric(df['close'], errors='coerce')
+            df.dropna(subset=['close'], inplace=True)
+            if df.empty:
+                logging.warning("Columna 'close' no numérica y se volvió vacía después de limpiar NaNs en calculate_macd. Retornando DataFrame original.")
+                return df
+
         ema_fast = df['close'].ewm(span=fast_period, adjust=False).mean()
         ema_slow = df['close'].ewm(span=slow_period, adjust=False).mean()
-        df['macd'] = ema_fast - ema_slow
-        df['macd_signal'] = df['macd'].ewm(span=signal_period, adjust=False).mean()
-        df['macd_histogram'] = df['macd'] - df['macd_signal']
+
+        df['MACD'] = ema_fast - ema_slow
+        df['MACD_SIGNAL'] = df['MACD'].ewm(span=signal_period, adjust=False).mean()
+        df['MACD_HIST'] = df['MACD'] - df['MACD_SIGNAL']
+
+        logging.debug("MACD calculado. Columnas añadidas: MACD, MACD_SIGNAL, MACD_HIST")
         return df
 
     def detect_trading_signals(self, df: pd.DataFrame) -> pd.DataFrame:

@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 import joblib
+from binance_data_processor import BinanceDataProcessor
 
 # Configurar logging
 logging.basicConfig(
@@ -42,16 +43,17 @@ class TradingSimulator:
         
         self.ml_model = None
         self.ml_scaler = None
-        # self.data_processor = BinanceDataProcessor()  # ELIMINADA PARA COMPATIBILIDAD COLAB
+        self.data_processor = BinanceDataProcessor()
         self.feature_columns = [
-            'open', 'high', 'low', 'close', 'volume', 'quote_asset_volume', 
-            'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume',
-            'BB_UPPER', 'BB_LOWER', 'BB_MIDDLE',
-            'hour', 'day_of_week', 'day_of_month', 'month',
-            'sma_5', 'sma_20', 'sma_50', 
-            'ema_12', 'ema_26', 
-            'rsi', 
-            'macd', 'macd_signal', 'macd_histogram'
+            'open', 'high', 'low', 'close', 'volume',
+            'SMA_10', 'SMA_30',
+            'EMA_12', 'EMA_26',
+            'RSI_14',
+            'BB_UPPER', 'BB_LOWER',
+            'BB_SMA', 'BB_STD',
+            'MACD', 'MACD_SIGNAL', 'MACD_HIST',
+            'ADX', 'P_SAR', 'P_SAR_DIR', # Indicadores de Momentum
+            'OBV', 'CMF' # Indicadores de Volumen
         ]
     
     def reset(self):
