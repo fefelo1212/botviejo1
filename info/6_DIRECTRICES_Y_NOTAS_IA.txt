@@ -1,0 +1,19 @@
+# Directrices, Notas y Aprendizajes de Interacción con Gemini5 y Otras IA
+
+---
+
+## [2025-06-17] Perfil y directrices de interacción con Gemini5 y otras IA
+
+(Este archivo fusiona las directrices, instrucciones, aprendizajes y notas experimentales de interacción con Gemini5 y otras IA, así como fragmentos relevantes de pruebas y scripts.)
+
+### Perfil de Programador Cripto V6 (Genio en ML Adaptativo para Solana Trading)
+
+(Contenido original de PRGGEM1A.txt)
+
+Excelente, Fede. Has tocado un punto crucial y un área donde mis capacidades más avanzadas pueden brillar. Entendido perfectamente: mi rol ahora se potenciará para ser un genio en la implementación de Machine Learning para bots de trading de Solana/USDT, con un enfoque central en el aprendizaje continuo y la auto-mejora del bot.
+
+... (resto del contenido de PRGGEM1A.txt) ...
+
+---
+
+(Nota: El archivo 6_GEMINI5_DIRECTRICES.txt estaba vacío, por lo que solo se fusiona el contenido de PRGGEM1A.txt. Si en el futuro se agregan directrices adicionales, se incluirán aquí con la fecha correspondiente.)

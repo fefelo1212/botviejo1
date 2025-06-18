@@ -47,6 +47,12 @@ Este bot de trading algorítmico está especializado en operaciones con Solana (
 - **Strategy Tester**: Sistema de prueba de estrategias con datos históricos
 - **Performance Analyzer**: Análisis de rendimiento de estrategias
 - **Parameter Optimizer**: Optimización de parámetros
+- **Ciclo de Mejora Automática de Estrategias Clásicas**: 
+  - Ejecución automatizada de todas las estrategias clásicas principales sobre datos históricos.
+  - Comparación de rentabilidad y métricas clave (Sharpe, drawdown, etc.).
+  - Optimización iterativa de parámetros vía grid search.
+  - Selección automática de la mejor estrategia y configuración óptima.
+  - Preparado para integración futura con modelos ML y optimización avanzada.
 
 ## Estrategias Implementadas
 

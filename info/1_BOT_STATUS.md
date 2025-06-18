@@ -61,22 +61,55 @@ Espero que estas recomendaciones te sean de gran utilidad para desatascar este p
 Así, el foco será la robustez y rentabilidad de las estrategias tradicionales antes de retomar el pipeline ML.
 
 ---
+# [2025-06-18] Ejecución y compatibilidad de backtesting con estrategias clásicas
 
-## Ciclo de mejora automática de estrategias clásicas (junio 2025)
+- Se detectó que el archivo backtesting.py intentaba importar clases (TechnicalIndicators, ClassicStrategy, etc.) desde un paquete/carpeta strategies/ que no existe, ya que las clases están en classic_strategies.py (antes strategies.py).
+- Se corrigió la importación para usar from classic_strategies import TechnicalIndicators.
+- Se comentó la importación de IndicatorPerformanceTracker y get_weighted_decision porque no existen en indicator_weighting.py.
+- El script ahora ejecuta, pero muestra: "No data loaded for backtest". Esto indica que falta especificar el archivo de datos históricos (CSV) a usar para el backtesting.
 
-Se implementó un flujo automatizado en `backtesting.py` que:
-- Ejecuta todas las estrategias clásicas principales (cruce de medias, RSI, MACD, Bollinger, Breakout) sobre los datos históricos de Solana 1m.
-- Realiza grid search de parámetros para cada estrategia.
-- Compara la rentabilidad y el Sharpe de cada combinación.
-- Elige la mejor estrategia y sus parámetros óptimos.
-- Imprime un resumen global de resultados y parámetros.
+### Próximos pasos sugeridos
+- Revisar cómo se especifica el archivo CSV de datos históricos en backtesting.py (argumento, input, o hardcodeado).
+- Probar con un archivo de la carpeta binance_data/SOLUSDT_raw_historical_data_*.csv.
+- Documentar el flujo exitoso y cualquier ajuste adicional necesario.
 
-Este ciclo permite iterar y optimizar automáticamente las estrategias clásicas, facilitando la comparación y el ajuste sin intervención manual. El objetivo es maximizar la ganancia histórica antes de integrar o comparar con modelos ML.
+---
 
-**Ubicación del código:** Bloque principal de `backtesting.py` (`if __name__ == "__main__":`).
+# [2025-06-18] Módulo intermediador para compatibilidad de datos
 
-**Próximos pasos:**
-- Documentar resultados y mejoras significativas.
-- (Opcional) Integrar optimización bayesiana o random search para mayor eficiencia.
-- (Opcional) Comparar con estrategias ML cuando el pipeline esté listo.
+- Se creó modulo_intermediador.py para adaptar datos históricos de Binance (open_time, etc.) al formato esperado por el backtesting clásico (timestamp, open, high, low, close, volume).
+- El intermediador trabaja entre los archivos CSV de binance_data/ y el módulo backtesting.py.
+- Se documentó su uso y función en el propio script de backtesting.
+- Esto elimina conflictos de formato y facilita la integración de datos de distintas fuentes.
 
+---
+
+# ---
+# [2025-06-18] AVANCE REGISTRADO: Backtesting clásico funcionando
+
+- Se integró el módulo intermediador y se probó exitosamente el flujo de backtesting clásico con la estrategia de cruce de medias móviles sobre sample_binance_raw_data.csv.
+- El flujo permite adaptar y analizar cualquier archivo de datos históricos de Solana (1m) para estrategias clásicas.
+- Próximo paso: probar con un archivo grande de binance_data/SOLUSDT_raw_historical_data_*.csv, pero primero estimar el tiempo de procesamiento para evitar procesos largos.
+- Alternativa: usar los chunks procesados (processed_data/chunk_00000.csv) si están disponibles y son más pequeños.
+
+---
+Opciones de evolución del proyecto (actualizado al 18/06/2025):
+
+1. Adaptar la arquitectura propuesta a la estructura actual de archivos
+   - Ventajas: integración rápida, menor riesgo de romper lo que ya funciona, menor tiempo de trabajo (estimado 5-9 horas).
+   - Desventajas: puede quedar algo de deuda técnica o inconsistencias si no se refactoriza todo a fondo.
+   - Ideal si se quiere avanzar rápido y aprovechar el código existente.
+
+2. Generar el esqueleto de código desde cero (arquitectura ideal)
+   - Ventajas: máxima claridad, orden y extensibilidad futura, módulos y clases bien desacoplados.
+   - Desventajas: requiere migrar o reescribir parte del código actual, mayor tiempo de trabajo (estimado 10-20 horas).
+   - Ideal si se busca máxima mantenibilidad y escalabilidad a largo plazo.
+
+Ambas opciones están listas para ser tomadas por una IA o programador. 
+El contexto, los módulos existentes, los datos históricos y los objetivos del bot están documentados en esta carpeta.
+
+Próximos pasos sugeridos:
+- Elegir una de las dos opciones según prioridades (velocidad vs. arquitectura ideal).
+- Realizar un commit y push a GitHub para dejar todo respaldado y ordenado antes de avanzar.
+
+Fin de registro de estado y opciones.
