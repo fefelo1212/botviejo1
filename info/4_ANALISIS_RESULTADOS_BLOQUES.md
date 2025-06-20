@@ -1,5 +1,7 @@
 # Análisis de Resultados del Entrenamiento por Bloques (20/06/2025)
 
+**Última actualización: 20/06/2025**
+
 ## Resumen de resultados (`resultados_bloques.csv`)
 - Se procesaron 30 bloques de 1,000 filas (último bloque de 880 filas).
 - El balance final por bloque oscila entre ~9,690 y ~10,005 (capital inicial: 10,000).
