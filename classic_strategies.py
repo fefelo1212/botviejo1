@@ -177,12 +177,11 @@ class TechnicalIndicators:
         up_move = high - high.shift()
         down_move = low.shift() - low
         
-        # +DM
-        plus_dm = pd.Series(0, index=up_move.index)
+        # +DM y -DM como float para evitar FutureWarning
+        plus_dm = pd.Series(0.0, index=up_move.index)
         plus_dm[(up_move > down_move) & (up_move > 0)] = up_move[(up_move > down_move) & (up_move > 0)]
         
-        # -DM
-        minus_dm = pd.Series(0, index=down_move.index)
+        minus_dm = pd.Series(0.0, index=down_move.index)
         minus_dm[(down_move > up_move) & (down_move > 0)] = down_move[(down_move > up_move) & (down_move > 0)]
         
         # Calcular TR (True Range)
@@ -292,6 +291,7 @@ class ClassicStrategy:
             pd.Series: Señales generadas (1: compra, -1: venta, 0: neutral)
         """
         # Calcular medias móviles
+        df = df.copy()
         df['fast_ma'] = TechnicalIndicators.sma(df['close'], fast_period)
         df['slow_ma'] = TechnicalIndicators.sma(df['close'], slow_period)
         
@@ -322,6 +322,7 @@ class ClassicStrategy:
             pd.Series: Señales generadas (1: compra, -1: venta, 0: neutral)
         """
         # Calcular RSI
+        df = df.copy()
         df['rsi'] = TechnicalIndicators.rsi(df['close'], period)
         
         # Generar señales
@@ -353,10 +354,10 @@ class ClassicStrategy:
             pd.Series: Señales generadas (1: compra, -1: venta, 0: neutral)
         """
         # Calcular MACD
+        df = df.copy()
         macd_line, signal_line, histogram = TechnicalIndicators.macd(
             df['close'], fast_period, slow_period, signal_period
         )
-        
         df['macd'] = macd_line
         df['signal_line'] = signal_line
         df['macd_hist'] = histogram
@@ -388,10 +389,10 @@ class ClassicStrategy:
             pd.Series: Señales generadas (1: compra, -1: venta, 0: neutral)
         """
         # Calcular Bandas de Bollinger
+        df = df.copy()
         middle, upper, lower = TechnicalIndicators.bollinger_bands(
             df['close'], period, num_std_dev
         )
-        
         df['bb_middle'] = middle
         df['bb_upper'] = upper
         df['bb_lower'] = lower
@@ -419,6 +420,7 @@ class ClassicStrategy:
             pd.Series: Señales generadas (1: compra, -1: venta, 0: neutral)
         """
         # Calcular máximos y mínimos recientes
+        df = df.copy()
         df['recent_high'] = df['high'].rolling(window=period).max().shift(1)
         df['recent_low'] = df['low'].rolling(window=period).min().shift(1)
         
@@ -688,14 +690,14 @@ class MachineLearningStrategy:
         data['return_10d'] = data['close'].pct_change(10)
         
         # Volatilidad
-        data['volatility_5d'] = data['return_1d'].rolling(5).std()
-        data['volatility_10d'] = data['return_1d'].rolling(10).std()
+        data['volatilidad_5d'] = data['return_1d'].rolling(5).std()
+        data['volatilidad_10d'] = data['return_1d'].rolling(10).std()
         
         # Características de volumen
-        data['volume_change'] = data['volume'].pct_change(1)
-        data['volume_ma5'] = data['volume'].rolling(5).mean()
-        data['volume_ma10'] = data['volume'].rolling(10).mean()
-        data['volume_ratio'] = data['volume'] / data['volume_ma5']
+        data['cambio_volumen'] = data['volume'].pct_change(1)
+        data['volumen_ma5'] = data['volume'].rolling(5).mean()
+        data['volumen_ma10'] = data['volume'].rolling(10).mean()
+        data['ratio_volumen'] = data['volume'] / data['volumen_ma5']
         
         # Características técnicas
         # RSI

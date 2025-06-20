@@ -130,6 +130,7 @@ class TradingSimulator:
         self.update_equity(price, timestamp)
     
     def close_position(self, price: float, timestamp, reason: str = ""):
+        print(f"[DEBUG] pd is: {pd}")
         """
         Cierra la posición actual
         
@@ -160,6 +161,13 @@ class TradingSimulator:
             entry_value = self.current_position['entry_price'] * self.current_position['size']
             pnl = entry_value - exit_value - commission_cost - self.current_position['commission_paid']
         
+        # Convertir ambos timestamps a datetime si es necesario
+        ts_exit = timestamp
+        ts_entry = self.current_position['timestamp']
+        if not isinstance(ts_exit, (pd.Timestamp,  type(pd.to_datetime('2020-01-01')))):
+            ts_exit = pd.to_datetime(ts_exit, errors='coerce')
+        if not isinstance(ts_entry, (pd.Timestamp,  type(pd.to_datetime('2020-01-01')))):
+            ts_entry = pd.to_datetime(ts_entry, errors='coerce')
         # Crear registro de trade
         trade = {
             **self.current_position,
@@ -168,7 +176,7 @@ class TradingSimulator:
             'exit_reason': reason,
             'pnl': pnl,
             'pnl_percent': (pnl / self.current_position['contract_value']) * 100,
-            'duration': (timestamp - self.current_position['timestamp']).total_seconds() / 3600  # horas
+            'duration': (ts_exit - ts_entry).total_seconds() / 3600  # horas
         }
         
         # Añadir a historial

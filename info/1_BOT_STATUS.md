@@ -113,3 +113,21 @@ Próximos pasos sugeridos:
 - Realizar un commit y push a GitHub para dejar todo respaldado y ordenado antes de avanzar.
 
 Fin de registro de estado y opciones.
+
+---
+
+## Avance junio 2025: Cerebro adaptativo funcionando (debug rápido)
+- Se implementó y validó el flujo mínimo del cerebro adaptativo:
+  - Usa el histórico (limitado a 200 filas) y prueba una estrategia clásica (cruce de medias) con parámetros fijos.
+  - El flujo de backtesting y selección de estrategia funciona y muestra resultados inmediatos.
+  - El sistema está listo para escalar: solo aumentar filas y combinaciones de estrategias/params.
+- Se agregaron prints de depuración para ver el contenido real del DataFrame y los resultados parciales.
+
+### Próximos pasos sugeridos
+1. Escalar el histórico a más filas y probar más estrategias/params (descomentar y ampliar el ciclo).
+2. Integrar la simulación en tiempo real usando datos nuevos y la mejor estrategia encontrada.
+3. Automatizar la reoptimización periódica si la rentabilidad baja.
+4. Documentar el flujo y dejar instrucciones claras para futuras IA o programadores.
+5. (Opcional) Integrar estrategias adaptativas o ML en el ciclo.
+
+---
